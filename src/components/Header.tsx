@@ -1,6 +1,7 @@
 import { FileText, Menu, X, User, Settings, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useProfile } from '../hooks/useProfile';
 import AuthModal from './AuthModal';
 import toast from 'react-hot-toast';
 
@@ -14,6 +15,7 @@ export default function Header({ currentPage, onPageChange }: HeaderProps) {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const { user, signOut } = useAuth();
+  const { profile } = useProfile();
 
   const navigation = [
     { name: 'Início', id: 'home' },
@@ -85,7 +87,7 @@ export default function Header({ currentPage, onPageChange }: HeaderProps) {
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center space-x-2 bg-gray-100 px-3 py-2 rounded-lg">
                       <User className="w-4 h-4 text-gray-600" />
-                      <span className="text-sm text-gray-700">{user.email}</span>
+                      <span className="text-sm text-gray-700">{profile?.full_name || user?.email}</span>
                     </div>
                     <button
                       onClick={handleSignOut}
@@ -148,7 +150,7 @@ export default function Header({ currentPage, onPageChange }: HeaderProps) {
                     <>
                       <div className="flex items-center space-x-2 text-gray-600 px-4 py-2">
                         <User className="w-4 h-4" />
-                        <span className="text-sm">{user.email}</span>
+                        <span className="text-sm">{profile?.full_name || user.email}</span>
                       </div>
                       <button
                         onClick={handleSignOut}

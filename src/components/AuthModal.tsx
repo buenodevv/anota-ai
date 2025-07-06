@@ -14,6 +14,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }: A
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { signIn, signUp } = useAuth();
@@ -31,7 +32,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }: A
           return;
         }
         
-        const { error } = await signUp(email, password);
+        const { error } = await signUp(email, password, fullName);
         if (error) {
           // Check if user already exists
           if (error.message?.includes('User already registered') || error.message?.includes('user_already_exists')) {
@@ -64,6 +65,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }: A
     setEmail('');
     setPassword('');
     setConfirmPassword('');
+    setFullName('');
     setShowPassword(false);
   };
 
@@ -98,6 +100,26 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin' }: A
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Full Name (only for signup) */}
+          {mode === 'signup' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nome Completo
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Seu nome completo"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
           {/* Email */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
