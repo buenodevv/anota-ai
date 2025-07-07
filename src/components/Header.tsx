@@ -106,7 +106,7 @@ export default function Header({ currentPage, onPageChange }: HeaderProps) {
                     Entrar
                   </button>
                   <button
-                    onClick={() => openAuthModal('signup')}
+                    onClick={()=>openAuthModal('signup')}
                     className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transform hover:scale-105 transition-all duration-200"
                   >
                     <User className="w-4 h-4" />
