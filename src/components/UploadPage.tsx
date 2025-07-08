@@ -1,8 +1,9 @@
-import { Upload, FileText, Loader2, Check, AlertCircle, X, Settings, Brain, Zap } from 'lucide-react';
+import { Upload, FileText, Loader2, CheckCircle, AlertCircle, Clock, X, Settings, Brain, Zap, Link, Globe } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { DocumentService } from '../services/documentService';
 import { AIService } from '../services/aiService';
+import { UrlService } from '../services/urlService';
 import AuthModal from './AuthModal';
 import toast from 'react-hot-toast';
 
@@ -28,6 +29,9 @@ export default function UploadPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'file' | 'url'>('file');
+  const [urlInput, setUrlInput] = useState('');
+  const [isProcessingUrl, setIsProcessingUrl] = useState(false);
   const [processingOptions, setProcessingOptions] = useState<ProcessingOptions>({
     summaryType: 'medium',
     tone: 'formal',
@@ -196,6 +200,110 @@ export default function UploadPage() {
     }
   };
 
+  const processUrl = async () => {
+    if (!urlInput.trim()) {
+      toast.error('Por favor, insira uma URL válida.');
+      return;
+    }
+
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    setIsProcessingUrl(true);
+    
+    try {
+      // Extract content from URL
+      toast.loading('Extraindo conteúdo da URL...', { id: 'url-processing' });
+      const urlContent = await UrlService.extractContentFromUrl(urlInput);
+      
+      // Create a document-like object for URL content
+      const urlDoc: Document = {
+        id: Date.now().toString(),
+        name: urlContent.title || urlContent.domain,
+        size: urlContent.content.length,
+        type: 'text/html',
+        uploadDate: new Date(),
+        status: 'processing',
+        progress: 0
+      };
+      
+      setDocuments(prev => [...prev, urlDoc]);
+      
+      // Process the URL content similar to file processing
+      updateDocumentStatus(urlDoc.id, 'processing', 10, 'Salvando conteúdo...');
+      
+      const documentData = {
+        user_id: user.id,
+        title: urlContent.title,
+        original_filename: urlContent.url,
+        file_type: 'text/html',
+        file_size: urlContent.content.length,
+        file_url: urlContent.url,
+        content: urlContent.content,
+        processing_status: 'processing' as const
+      };
+      
+      const createdDoc = await DocumentService.createDocument(documentData);
+      
+      // Generate summaries
+      updateDocumentStatus(urlDoc.id, 'processing', 30, 'Gerando resumo curto...');
+      const shortSummary = await AIService.generateSummary(urlContent.content, {
+        type: 'short',
+        tone: processingOptions.tone,
+        language: 'pt-BR'
+      });
+
+      updateDocumentStatus(urlDoc.id, 'processing', 50, 'Gerando resumo médio...');
+      const mediumSummary = await AIService.generateSummary(urlContent.content, {
+        type: 'medium',
+        tone: processingOptions.tone,
+        language: 'pt-BR'
+      });
+
+      updateDocumentStatus(urlDoc.id, 'processing', 70, 'Gerando resumo detalhado...');
+      const detailedSummary = await AIService.generateSummary(urlContent.content, {
+        type: 'detailed',
+        tone: processingOptions.tone,
+        language: 'pt-BR'
+      });
+      
+      // Auto-categorize if enabled
+      let category = null;
+      let tags = null;
+      
+      if (processingOptions.autoCategory) {
+        updateDocumentStatus(urlDoc.id, 'processing', 85, 'Categorizando conteúdo...');
+        category = await AIService.categorizeDocument(urlContent.content);
+        
+        updateDocumentStatus(urlDoc.id, 'processing', 95, 'Extraindo tags...');
+        tags = await AIService.extractTags(urlContent.content);
+      }
+      
+      // Update document with summaries
+      await DocumentService.updateDocument(createdDoc.id, {
+        summary_short: shortSummary,
+        summary_medium: mediumSummary,
+        summary_detailed: detailedSummary,
+        category,
+        tags,
+        processing_status: 'completed'
+      });
+      
+      updateDocumentStatus(urlDoc.id, 'completed', 100, 'Processamento concluído!');
+      toast.success('Conteúdo da URL processado com sucesso!', { id: 'url-processing' });
+      setUrlInput('');
+      
+    } catch (error) {
+      console.error('Error processing URL:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      toast.error(`Erro ao processar URL: ${errorMessage}`, { id: 'url-processing' });
+    } finally {
+      setIsProcessingUrl(false);
+    }
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -317,56 +425,140 @@ export default function UploadPage() {
           </div>
         </div>
 
-        {/* Upload Area */}
+        {/* Tab Navigation */}
         <div className="mb-8">
-          <div
-            className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${
-              isDragOver 
-                ? 'border-blue-400 bg-blue-50' 
-                : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/50'
-            }`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragOver(true);
-            }}
-            onDragLeave={() => setIsDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragOver(false);
-              handleFileSelect(e.dataTransfer.files);
-            }}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".pdf,.docx,.txt"
-              onChange={(e) => handleFileSelect(e.target.files)}
-              className="hidden"
-            />
-            
-            <div className="space-y-6">
-              <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
-                <Upload className="w-8 h-8 text-white" />
-              </div>
+          <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveTab('file')}
+              className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                activeTab === 'file'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-blue-600'
+              }`}
+            >
+              <Upload className="w-5 h-5" />
+              <span>Upload de Arquivos</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('url')}
+              className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                activeTab === 'url'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-blue-600'
+              }`}
+            >
+              <Globe className="w-5 h-5" />
+              <span>Resumo por URL</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Content Area */}
+        <div className="mb-8">
+          {activeTab === 'file' ? (
+            /* File Upload Area */
+            <div
+              className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${
+                isDragOver 
+                  ? 'border-blue-400 bg-blue-50' 
+                  : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/50'
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                handleFileSelect(e.dataTransfer.files);
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,.txt"
+                onChange={(e) => handleFileSelect(e.target.files)}
+                className="hidden"
+              />
               
-              <div>
-                <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                  Arraste arquivos aqui ou clique para selecionar
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  Suporte para PDF, DOCX e TXT (máximo 10MB por arquivo)
-                </p>
+              <div className="space-y-6">
+                <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
+                  <Upload className="w-8 h-8 text-white" />
+                </div>
                 
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200"
-                >
-                  Selecionar Arquivos
-                </button>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-2">
+                    Arraste arquivos aqui ou clique para selecionar
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    Suporte para PDF, DOCX e TXT (máximo 10MB por arquivo)
+                  </p>
+                  
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200"
+                  >
+                    Selecionar Arquivos
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            /* URL Input Area */
+            <div className="bg-white rounded-2xl border-2 border-gray-200 p-12 text-center">
+              <div className="space-y-6">
+                <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 to-blue-600 rounded-2xl flex items-center justify-center">
+                  <Link className="w-8 h-8 text-white" />
+                </div>
+                
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-2">
+                    Gerar resumo a partir de URL
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    Cole o link de um artigo, notícia ou conteúdo web para gerar um resumo automaticamente
+                  </p>
+                  
+                  <div className="max-w-md mx-auto space-y-4">
+                    <div className="flex space-x-2">
+                      <input
+                        type="url"
+                        value={urlInput}
+                        onChange={(e) => setUrlInput(e.target.value)}
+                        placeholder="https://exemplo.com/artigo"
+                        className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !isProcessingUrl) {
+                            processUrl();
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={processUrl}
+                        disabled={isProcessingUrl || !urlInput.trim()}
+                        className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                      >
+                        {isProcessingUrl ? (
+                          <div className="flex items-center space-x-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Processando...</span>
+                          </div>
+                        ) : (
+                          'Gerar Resumo'
+                        )}
+                      </button>
+                    </div>
+                    
+                    <p className="text-sm text-gray-500">
+                      Funciona com artigos, blogs, notícias e outros conteúdos web
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Documents List */}
