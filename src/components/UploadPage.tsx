@@ -1,4 +1,4 @@
-import { Upload, FileText, Loader2, CheckCircle, AlertCircle, Clock, X, Settings, Brain, Zap, Link, Globe } from 'lucide-react';
+import { Upload, FileText, Loader2, CheckCircle, AlertCircle, Clock, X, Settings, Brain, Zap, Link, Globe, Check } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { DocumentService } from '../services/documentService';
@@ -648,7 +648,7 @@ export default function UploadPage() {
                 Seus resumos foram gerados com IA e estão disponíveis na biblioteca.
               </p>
               <button
-                onClick={() => window.location.href = '#library'}
+                onClick={() => navigate('/library')}
                 className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200"
               >
                 Ver na Biblioteca
