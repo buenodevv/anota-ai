@@ -5,6 +5,7 @@ import HomePage from './components/HomePage';
 import UploadPage from './components/UploadPage';
 import LibraryPage from './components/LibraryPage';
 import AboutPage from './components/AboutPage';
+import StudyPlanningPage from './components/StudyPlanningPage';
 import Footer from './components/Footer';
 
 function App() {
@@ -18,6 +19,8 @@ function App() {
         return <UploadPage />;
       case 'library':
         return <LibraryPage />;
+      case 'planning':
+        return <StudyPlanningPage />;
       case 'about':
         return <AboutPage />;
       default:
@@ -28,7 +31,7 @@ function App() {
   return (
     <div className="min-h-screen bg-white">
       <Header currentPage={currentPage} onPageChange={setCurrentPage} />
-      <main>
+      <main className="pt-20">
         {renderPage()}
       </main>
       <Footer />

@@ -21,6 +21,7 @@ export default function Header({ currentPage, onPageChange }: HeaderProps) {
     { name: 'Início', id: 'home' },
     { name: 'Upload', id: 'upload' },
     { name: 'Biblioteca', id: 'library' },
+    { name: 'Planejamento', id: 'planning' }, // Nova página
     { name: 'Sobre', id: 'about' }
   ];
 
