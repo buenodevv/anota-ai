@@ -271,47 +271,63 @@ Considere:
   }
 
   static async getUserStudyPlans(userId: string): Promise<StudyPlan[]> {
-    const { data: plans, error } = await supabase
+    // Primeiro, buscar apenas os planos
+    const { data: plans, error: plansError } = await supabase
       .from('study_plans')
-      .select(`
-        *,
-        plan_subjects(*),
-        study_schedule(*)
-      `)
+      .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    return plans.map(plan => ({
-      id: plan.id,
-      title: plan.title,
-      description: plan.description,
-      examName: plan.exam_name,
-      examDate: new Date(plan.exam_date),
-      totalStudyHours: plan.total_study_hours,
-      dailyStudyHours: plan.daily_study_hours,
-      subjects: plan.plan_subjects.map(s => ({
-        id: s.id,
-        subjectName: s.subject_name,
-        weightPercentage: s.weight_percentage,
-        estimatedHours: s.estimated_hours,
-        completedHours: s.completed_hours,
-        difficulty: s.difficulty,
-        priority: s.priority
-      })),
-      schedule: plan.study_schedule.map(item => ({
-        id: item.id,
-        subjectId: item.subject_id,
-        scheduledDate: new Date(item.scheduled_date),
-        startTime: item.start_time,
-        endTime: item.end_time,
-        durationMinutes: item.duration_minutes,
-        sessionType: item.session_type,
-        topic: item.topic,
-        completed: item.completed
-      }))
-    }));
+  
+    if (plansError) throw plansError;
+    if (!plans || plans.length === 0) return [];
+  
+    // Buscar matérias e cronogramas separadamente
+    const planIds = plans.map(p => p.id);
+    
+    const { data: subjects } = await supabase
+      .from('plan_subjects')
+      .select('*')
+      .in('plan_id', planIds);
+  
+    const { data: schedules } = await supabase
+      .from('study_schedule')
+      .select('*')
+      .in('plan_id', planIds);
+  
+    return plans.map(plan => {
+      const planSubjects = subjects?.filter(s => s.plan_id === plan.id) || [];
+      const planSchedule = schedules?.filter(s => s.plan_id === plan.id) || [];
+  
+      return {
+        id: plan.id,
+        title: plan.title,
+        description: plan.description,
+        examName: plan.exam_name,
+        examDate: new Date(plan.exam_date),
+        totalStudyHours: plan.total_study_hours,
+        dailyStudyHours: plan.daily_study_hours,
+        subjects: planSubjects.map(s => ({
+          id: s.id,
+          subjectName: s.subject_name,
+          weightPercentage: s.weight_percentage,
+          estimatedHours: s.estimated_hours,
+          completedHours: s.completed_hours || 0,
+          difficulty: s.difficulty,
+          priority: s.priority
+        })),
+        schedule: planSchedule.map(item => ({
+          id: item.id,
+          subjectId: item.subject_id,
+          scheduledDate: new Date(item.scheduled_date),
+          startTime: item.start_time,
+          endTime: item.end_time,
+          durationMinutes: item.duration_minutes,
+          sessionType: item.session_type,
+          topic: item.topic,
+          completed: item.completed
+        }))
+      };
+    });
   }
 
   static async updatePlanProgress(planId: string, subjectId: string, hoursStudied: number): Promise<void> {
