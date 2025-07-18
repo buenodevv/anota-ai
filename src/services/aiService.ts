@@ -329,4 +329,130 @@ ${content.substring(0, 1500)}...`
     
     return foundTags.slice(0, 5);
   }
+
+  static async analyzeEdital(editalContent: string): Promise<EditalAnalysis> {
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('Chave da API OpenAI não configurada');
+    }
+
+    const prompt = `
+Analise o edital de concurso abaixo e extraia as seguintes informações em formato JSON:
+
+{
+  "concursoNome": "Nome do concurso",
+  "orgao": "Órgão responsável",
+  "cargo": "Cargo principal",
+  "dataProva": "Data da prova (formato YYYY-MM-DD se disponível)",
+  "materias": [
+    {
+      "nome": "Nome da matéria",
+      "peso": "Peso/importância (1-5)",
+      "topicos": ["tópico1", "tópico2"]
+    }
+  ],
+  "horasEstudoSugeridas": "Número de horas diárias sugeridas",
+  "nivelDificuldade": "easy|medium|hard",
+  "observacoes": "Observações importantes sobre o edital"
+}
+
+EDITAL:
+${editalContent.substring(0, 8000)}...
+    `;
+
+    try {
+      const response = await fetch(this.API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'Você é um especialista em análise de editais de concursos públicos brasileiros. Extraia informações precisas e estruturadas.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: 2000,
+          temperature: 0.1,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro na API OpenAI: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const analysisText = data.choices[0]?.message?.content;
+      
+      if (!analysisText) {
+        throw new Error('Resposta vazia da API OpenAI');
+      }
+
+      try {
+        return JSON.parse(analysisText);
+      } catch {
+        // Fallback se não conseguir parsear JSON
+        return this.fallbackEditalAnalysis(editalContent);
+      }
+    } catch (error) {
+      console.error('Error analyzing edital:', error);
+      throw new Error('Erro ao analisar edital com IA');
+    }
+  }
+
+  private static fallbackEditalAnalysis(content: string): EditalAnalysis {
+    const contentLower = content.toLowerCase();
+    
+    // Detectar matérias comuns
+    const commonSubjects = [
+      'direito constitucional', 'direito administrativo', 'direito civil',
+      'direito penal', 'português', 'matemática', 'raciocínio lógico',
+      'informática', 'conhecimentos gerais', 'atualidades'
+    ];
+    
+    const foundSubjects = commonSubjects
+      .filter(subject => contentLower.includes(subject))
+      .map(subject => ({
+        nome: subject.charAt(0).toUpperCase() + subject.slice(1),
+        peso: 3,
+        topicos: []
+      }));
+
+    return {
+      concursoNome: 'Concurso Público',
+      orgao: 'Órgão Público',
+      cargo: 'Cargo Público',
+      dataProva: '',
+      materias: foundSubjects.length > 0 ? foundSubjects : [
+        { nome: 'Português', peso: 4, topicos: [] },
+        { nome: 'Conhecimentos Gerais', peso: 3, topicos: [] }
+      ],
+      horasEstudoSugeridas: '4',
+      nivelDificuldade: 'medium',
+      observacoes: 'Análise automática do edital'
+    };
+  }
+}
+
+export interface EditalAnalysis {
+  concursoNome: string;
+  orgao: string;
+  cargo: string;
+  dataProva: string;
+  materias: {
+    nome: string;
+    peso: number;
+    topicos: string[];
+  }[];
+  horasEstudoSugeridas: string;
+  nivelDificuldade: 'easy' | 'medium' | 'hard';
+  observacoes: string;
 }

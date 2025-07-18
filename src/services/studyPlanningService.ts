@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { AIService } from './aiService';
+import { DocumentService } from './documentService';
 
 export interface StudyPlanRequest {
   examName: string;
@@ -435,5 +436,67 @@ Considere:
       averageSessionDuration,
       lastStudyDate
     };
+  }
+
+  static async generateStudyPlanFromEdital(editalFile: File): Promise<StudyPlan> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Usuário não autenticado');
+
+    try {
+      // 1. Extrair texto do PDF do edital
+      const editalContent = await DocumentService.extractTextFromFile(editalFile);
+      
+      if (editalContent.length < 500) {
+        throw new Error('Edital muito curto ou não foi possível extrair o conteúdo');
+      }
+
+      // 2. Analisar edital com IA
+      const editalAnalysis = await AIService.analyzeEdital(editalContent);
+      
+      // 3. Converter análise para StudyPlanRequest
+      const studyPlanRequest: StudyPlanRequest = {
+        examName: editalAnalysis.concursoNome,
+        examDate: editalAnalysis.dataProva ? new Date(editalAnalysis.dataProva) : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 dias se não especificado
+        availableHoursPerDay: parseInt(editalAnalysis.horasEstudoSugeridas) || 4,
+        currentLevel: 'intermediate',
+        subjects: editalAnalysis.materias.map(m => m.nome),
+        focusAreas: editalAnalysis.materias
+          .filter(m => m.peso >= 4)
+          .map(m => m.nome)
+      };
+
+      // 4. Gerar plano de estudos
+      const studyPlan = await this.generateStudyPlan(studyPlanRequest);
+      
+      // 5. Salvar referência ao edital
+      await this.saveEditalReference(studyPlan.id, editalFile, user.id, editalAnalysis);
+      
+      return studyPlan;
+    } catch (error) {
+      console.error('Error generating study plan from edital:', error);
+      throw new Error('Erro ao gerar plano de estudos a partir do edital');
+    }
+  }
+
+  private static async saveEditalReference(planId: string, editalFile: File, userId: string, analysis: any) {
+    try {
+      // Upload do edital para storage
+      const editalUrl = await DocumentService.uploadFile(editalFile, userId);
+      
+      // Salvar documento do edital
+      await DocumentService.createDocument({
+        user_id: userId,
+        title: `Edital - ${analysis.concursoNome}`,
+        content: JSON.stringify(analysis),
+        file_url: editalUrl,
+        file_type: editalFile.type,
+        file_size: editalFile.size,
+        category: 'Edital',
+        tags: ['edital', 'concurso', analysis.orgao].filter(Boolean)
+      });
+    } catch (error) {
+      console.error('Error saving edital reference:', error);
+      // Não falha o processo principal se não conseguir salvar a referência
+    }
   }
 }
