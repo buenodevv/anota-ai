@@ -1,15 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Target, TrendingUp, Plus, Play, Pause, BarChart3 } from 'lucide-react';
-import { StudyPlanningService, StudyPlan, StudyPlanRequest } from '../services/studyPlanningService';
+import { Calendar, Clock, Target, TrendingUp, Plus, Play, Pause, BarChart3, BookOpen } from 'lucide-react';
+import { StudyPlanningService, StudyPlan, StudyPlanRequest, PlanSubject } from '../services/studyPlanningService';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
+
+// Interface para sessão de estudo ativa
+interface ActiveStudySession {
+  planId: string;
+  subjectId: string;
+  subjectName: string;
+  startTime: Date;
+  seconds: number;
+}
 
 export default function StudyPlanningPage() {
   const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTimer, setActiveTimer] = useState<string | null>(null);
-  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [activeSession, setActiveSession] = useState<ActiveStudySession | null>(null);
+  const [showSubjectSelector, setShowSubjectSelector] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -18,15 +27,16 @@ export default function StudyPlanningPage() {
     }
   }, [user]);
 
+  // Timer effect
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (activeTimer) {
+    if (activeSession) {
       interval = setInterval(() => {
-        setTimerSeconds(prev => prev + 1);
+        setActiveSession(prev => prev ? { ...prev, seconds: prev.seconds + 1 } : null);
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [activeTimer]);
+  }, [activeSession]);
 
   const loadStudyPlans = async () => {
     try {
@@ -47,19 +57,68 @@ export default function StudyPlanningPage() {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const startTimer = (sessionId: string) => {
-    setActiveTimer(sessionId);
-    setTimerSeconds(0);
+  const startStudySession = (planId: string, subjectId: string, subjectName: string) => {
+    setActiveSession({
+      planId,
+      subjectId,
+      subjectName,
+      startTime: new Date(),
+      seconds: 0
+    });
+    setShowSubjectSelector(false);
+    toast.success(`Iniciando estudo de ${subjectName}`);
   };
 
-  const stopTimer = () => {
-    if (activeTimer && timerSeconds > 0) {
-      const hoursStudied = timerSeconds / 3600;
-      // Aqui você salvaria a sessão de estudo
-      toast.success(`Sessão de ${formatTime(timerSeconds)} registrada!`);
+  const stopStudySession = async () => {
+    if (!activeSession || activeSession.seconds < 60) {
+      toast.error('Sessão muito curta (mínimo 1 minuto)');
+      setActiveSession(null);
+      return;
     }
-    setActiveTimer(null);
-    setTimerSeconds(0);
+
+    try {
+      const hoursStudied = activeSession.seconds / 3600;
+      
+      // Salvar sessão no banco
+      await StudyPlanningService.saveStudySession({
+        planId: activeSession.planId,
+        subjectId: activeSession.subjectId,
+        startTime: activeSession.startTime,
+        endTime: new Date(),
+        durationMinutes: Math.floor(activeSession.seconds / 60),
+        sessionType: 'study',
+        notes: `Sessão de estudo de ${activeSession.subjectName}`
+      });
+
+      // Atualizar progresso da matéria
+      await StudyPlanningService.updateSubjectProgress(
+        activeSession.planId,
+        activeSession.subjectId,
+        hoursStudied
+      );
+
+      toast.success(`Sessão de ${formatTime(activeSession.seconds)} em ${activeSession.subjectName} registrada!`);
+      
+      // Recarregar planos para atualizar progresso
+      await loadStudyPlans();
+    } catch (error) {
+      toast.error('Erro ao salvar sessão de estudo');
+    } finally {
+      setActiveSession(null);
+    }
+  };
+
+  // Obter todas as matérias de todos os planos ativos
+  const getAllActiveSubjects = (): Array<{ planId: string; subject: PlanSubject; planTitle: string }> => {
+    return studyPlans
+      .filter(plan => plan.examDate > new Date())
+      .flatMap(plan => 
+        plan.subjects.map(subject => ({
+          planId: plan.id,
+          subject,
+          planTitle: plan.title
+        }))
+      );
   };
 
   if (loading) {
@@ -90,31 +149,44 @@ export default function StudyPlanningPage() {
           </div>
         </div>
 
-        {/* Cronômetro de Estudos */}
+        {/* Cronômetro de Estudos por Matéria */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-2">Cronômetro de Estudos</h2>
-              <div className="text-4xl font-mono font-bold text-blue-600">
-                {formatTime(timerSeconds)}
-              </div>
+              {activeSession ? (
+                <>
+                  <div className="text-sm text-gray-600 mb-1">Estudando: {activeSession.subjectName}</div>
+                  <div className="text-4xl font-mono font-bold text-blue-600">
+                    {formatTime(activeSession.seconds)}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-4xl font-mono font-bold text-gray-400">
+                    00:00:00
+                  </div>
+                  <div className="text-sm text-gray-500 mt-1">Selecione uma matéria para começar</div>
+                </>
+              )}
             </div>
             <div className="flex gap-4">
-              {!activeTimer ? (
+              {!activeSession ? (
                 <button
-                  onClick={() => startTimer('current-session')}
+                  onClick={() => setShowSubjectSelector(true)}
                   className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                  disabled={getAllActiveSubjects().length === 0}
                 >
                   <Play className="w-5 h-5" />
-                  Iniciar
+                  Iniciar Estudo
                 </button>
               ) : (
                 <button
-                  onClick={stopTimer}
+                  onClick={stopStudySession}
                   className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
                 >
                   <Pause className="w-5 h-5" />
-                  Parar
+                  Finalizar Sessão
                 </button>
               )}
             </div>
@@ -137,7 +209,7 @@ export default function StudyPlanningPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Horas Hoje</p>
-                <p className="text-2xl font-bold text-gray-900">{Math.floor(timerSeconds / 3600)}</p>
+                <p className="text-2xl font-bold text-gray-900">{Math.floor((activeSession?.seconds || 0) / 3600)}</p>
               </div>
               <Clock className="w-8 h-8 text-green-600" />
             </div>
@@ -184,6 +256,51 @@ export default function StudyPlanningPage() {
             ))
           )}
         </div>
+
+        {/* Modal de Seleção de Matérias */}
+        {showSubjectSelector && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-md w-full">
+              <div className="p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Selecionar Matéria</h2>
+                <p className="text-gray-600 mb-6">Escolha a matéria que você vai estudar:</p>
+                
+                <div className="space-y-3 max-h-60 overflow-y-auto">
+                  {getAllActiveSubjects().map(({ planId, subject, planTitle }) => (
+                    <button
+                      key={`${planId}-${subject.id}`}
+                      onClick={() => startStudySession(planId, subject.id, subject.subjectName)}
+                      className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                    >
+                      <div className="font-medium text-gray-900">{subject.subjectName}</div>
+                      <div className="text-sm text-gray-500">{planTitle}</div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {subject.completedHours}h / {subject.estimatedHours}h concluídas
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                
+                {getAllActiveSubjects().length === 0 && (
+                  <div className="text-center py-8">
+                    <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-500">Nenhuma matéria disponível</p>
+                    <p className="text-sm text-gray-400">Crie um plano de estudos primeiro</p>
+                  </div>
+                )}
+                
+                <div className="flex justify-end mt-6">
+                  <button
+                    onClick={() => setShowSubjectSelector(false)}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal de Criação */}
         {showCreateForm && (

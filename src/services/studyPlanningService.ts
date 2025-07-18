@@ -44,6 +44,17 @@ export interface ScheduleItem {
   completed: boolean;
 }
 
+// Nova interface para sessão de estudo
+export interface StudySessionData {
+  planId: string;
+  subjectId: string;
+  startTime: Date;
+  endTime: Date;
+  durationMinutes: number;
+  sessionType: 'study' | 'review' | 'practice';
+  notes?: string;
+}
+
 export class StudyPlanningService {
   
   static async generateStudyPlan(request: StudyPlanRequest): Promise<StudyPlan> {
@@ -340,5 +351,89 @@ Considere:
       .eq('plan_id', planId);
 
     if (error) throw error;
+  }
+
+  // Novo método para salvar sessão de estudo
+  static async saveStudySession(sessionData: StudySessionData): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Usuário não autenticado');
+
+    const { error } = await supabase
+      .from('study_sessions')
+      .insert({
+        user_id: user.id,
+        plan_id: sessionData.planId,
+        subject_id: sessionData.subjectId,
+        start_time: sessionData.startTime.toISOString(),
+        end_time: sessionData.endTime.toISOString(),
+        duration_minutes: sessionData.durationMinutes,
+        session_type: sessionData.sessionType,
+        notes: sessionData.notes
+      });
+
+    if (error) throw error;
+  }
+
+  // Método atualizado para incrementar horas da matéria
+  static async updateSubjectProgress(planId: string, subjectId: string, additionalHours: number): Promise<void> {
+    // Primeiro, buscar as horas atuais
+    const { data: subject, error: fetchError } = await supabase
+      .from('plan_subjects')
+      .select('completed_hours')
+      .eq('id', subjectId)
+      .eq('plan_id', planId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const newCompletedHours = (subject.completed_hours || 0) + additionalHours;
+
+    const { error } = await supabase
+      .from('plan_subjects')
+      .update({ 
+        completed_hours: newCompletedHours
+      })
+      .eq('id', subjectId)
+      .eq('plan_id', planId);
+
+    if (error) throw error;
+  }
+
+  // Método para obter estatísticas de estudo por matéria
+  static async getSubjectStudyStats(userId: string, subjectId: string): Promise<{
+    totalSessions: number;
+    totalHours: number;
+    averageSessionDuration: number;
+    lastStudyDate: Date | null;
+  }> {
+    const { data: sessions, error } = await supabase
+      .from('study_sessions')
+      .select('duration_minutes, start_time')
+      .eq('user_id', userId)
+      .eq('subject_id', subjectId)
+      .order('start_time', { ascending: false });
+
+    if (error) throw error;
+
+    if (!sessions || sessions.length === 0) {
+      return {
+        totalSessions: 0,
+        totalHours: 0,
+        averageSessionDuration: 0,
+        lastStudyDate: null
+      };
+    }
+
+    const totalMinutes = sessions.reduce((sum, session) => sum + session.duration_minutes, 0);
+    const totalHours = totalMinutes / 60;
+    const averageSessionDuration = totalMinutes / sessions.length;
+    const lastStudyDate = new Date(sessions[0].start_time);
+
+    return {
+      totalSessions: sessions.length,
+      totalHours,
+      averageSessionDuration,
+      lastStudyDate
+    };
   }
 }
