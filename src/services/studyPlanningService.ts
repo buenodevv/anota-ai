@@ -348,56 +348,143 @@ Considere:
       .update({ 
         completed_hours: hoursStudied 
       })
-      .eq('id', subjectId)
-      .eq('plan_id', planId);
-
+      .eq('id', subjectId);
+  
     if (error) throw error;
   }
 
   // Novo método para salvar sessão de estudo
   static async saveStudySession(sessionData: StudySessionData): Promise<void> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Usuário não autenticado');
-
-    const { error } = await supabase
+    console.log('saveStudySession chamado com:', sessionData);
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      throw new Error('Usuário não autenticado');
+    }
+  
+    const sessionPayload = {
+      user_id: user.id,
+      plan_id: sessionData.planId,
+      subject_id: sessionData.subjectId,
+      start_time: sessionData.startTime.toISOString(),
+      end_time: sessionData.endTime.toISOString(),
+      duration_minutes: sessionData.durationMinutes,
+      session_type: sessionData.sessionType,
+      notes: sessionData.notes
+    };
+    
+    console.log('Payload da sessão:', sessionPayload);
+  
+    const { data, error } = await supabase
       .from('study_sessions')
-      .insert({
-        user_id: user.id,
-        plan_id: sessionData.planId,
-        subject_id: sessionData.subjectId,
-        start_time: sessionData.startTime.toISOString(),
-        end_time: sessionData.endTime.toISOString(),
-        duration_minutes: sessionData.durationMinutes,
-        session_type: sessionData.sessionType,
-        notes: sessionData.notes
+      .insert(sessionPayload)
+      .select();
+  
+    if (error) {
+      console.error('Erro ao salvar sessão:', {
+        error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        payload: sessionPayload
       });
-
-    if (error) throw error;
+      throw error;
+    }
+    
+    console.log('Sessão salva com sucesso:', data);
   }
 
   // Método atualizado para incrementar horas da matéria
   static async updateSubjectProgress(planId: string, subjectId: string, additionalHours: number): Promise<void> {
-    // Primeiro, buscar as horas atuais
-    const { data: subject, error: fetchError } = await supabase
-      .from('plan_subjects')
-      .select('completed_hours')
-      .eq('id', subjectId)
-      .eq('plan_id', planId)
-      .single();
-
-    if (fetchError) throw fetchError;
-
-    const newCompletedHours = (subject.completed_hours || 0) + additionalHours;
-
-    const { error } = await supabase
-      .from('plan_subjects')
-      .update({ 
-        completed_hours: newCompletedHours
-      })
-      .eq('id', subjectId)
-      .eq('plan_id', planId);
-
-    if (error) throw error;
+    console.log('updateSubjectProgress chamado com:', { planId, subjectId, additionalHours });
+    
+    try {
+      // Verificar se o usuário está autenticado
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Usuário não autenticado');
+      }
+      console.log('Usuário autenticado:', user.id);
+      
+      // Primeiro, buscar as horas atuais usando apenas o subjectId
+      const { data: subject, error: fetchError } = await supabase
+        .from('plan_subjects')
+        .select('completed_hours, plan_id')
+        .eq('id', subjectId)
+        .single();
+  
+      if (fetchError) {
+        console.error('Erro ao buscar matéria:', {
+          error: fetchError,
+          message: fetchError.message,
+          details: fetchError.details,
+          hint: fetchError.hint,
+          code: fetchError.code
+        });
+        throw fetchError;
+      }
+  
+      if (!subject) {
+        throw new Error(`Matéria não encontrada: subjectId=${subjectId}`);
+      }
+  
+      // Verificar se a matéria pertence ao plano correto
+      if (subject.plan_id !== planId) {
+        throw new Error(`Matéria ${subjectId} não pertence ao plano ${planId}`);
+      }
+  
+      const currentHours = subject.completed_hours || 0;
+      // Manter o valor decimal original, arredondando apenas para 2 casas decimais
+      const additionalHoursRounded = Math.round(additionalHours * 100) / 100;
+      const newCompletedHours = Math.round((currentHours + additionalHoursRounded) * 100) / 100;
+      
+      // Validar se o valor é válido
+      if (newCompletedHours < 0) {
+        throw new Error('Horas completadas não podem ser negativas');
+      }
+      
+      console.log('Atualizando horas:', { 
+        current: currentHours, 
+        additional: additionalHours,
+        additionalRounded: additionalHoursRounded,
+        new: newCompletedHours,
+        type: typeof newCompletedHours
+      });
+  
+      // Atualizar usando apenas o subjectId
+      const { data: updateData, error: updateError } = await supabase
+        .from('plan_subjects')
+        .update({ 
+          completed_hours: newCompletedHours
+        })
+        .eq('id', subjectId)
+        .select();
+  
+      if (updateError) {
+        console.error('Erro detalhado ao atualizar progresso:', {
+          error: updateError,
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+          code: updateError.code,
+          subjectId,
+          newCompletedHours
+        });
+        throw updateError;
+      }
+      
+      console.log('Progresso atualizado com sucesso:', updateData);
+    } catch (error) {
+      console.error('Erro em updateSubjectProgress:', {
+        error,
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+        planId,
+        subjectId,
+        additionalHours
+      });
+      throw error;
+    }
   }
 
   // Método para obter estatísticas de estudo por matéria

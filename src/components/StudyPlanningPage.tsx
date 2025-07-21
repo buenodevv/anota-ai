@@ -79,6 +79,12 @@ export default function StudyPlanningPage() {
     try {
       const hoursStudied = activeSession.seconds / 3600;
       
+      console.log('Dados da sessão:', {
+        planId: activeSession.planId,
+        subjectId: activeSession.subjectId,
+        hoursStudied
+      });
+      
       // Salvar sessão no banco
       await StudyPlanningService.saveStudySession({
         planId: activeSession.planId,
@@ -89,20 +95,21 @@ export default function StudyPlanningPage() {
         sessionType: 'study',
         notes: `Sessão de estudo de ${activeSession.subjectName}`
       });
-
+  
       // Atualizar progresso da matéria
       await StudyPlanningService.updateSubjectProgress(
         activeSession.planId,
         activeSession.subjectId,
         hoursStudied
       );
-
+  
       toast.success(`Sessão de ${formatTime(activeSession.seconds)} em ${activeSession.subjectName} registrada!`);
       
       // Recarregar planos para atualizar progresso
       await loadStudyPlans();
     } catch (error) {
-      toast.error('Erro ao salvar sessão de estudo');
+      console.error('Erro detalhado ao salvar sessão:', error);
+      toast.error(`Erro ao salvar sessão de estudo: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     } finally {
       setActiveSession(null);
     }
