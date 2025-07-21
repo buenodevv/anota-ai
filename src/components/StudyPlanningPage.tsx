@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Clock, Target, TrendingUp, Plus, Play, Pause, BarChart3, BookOpen, FileText } from 'lucide-react';
+import { Calendar, Clock, Target, TrendingUp, Plus, Play, Pause, BarChart3, BookOpen, FileText, Search, Filter, Star, Award, Zap, ChevronRight } from 'lucide-react';
 import { StudyPlanningService, StudyPlan, StudyPlanRequest, PlanSubject } from '../services/studyPlanningService';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
@@ -19,6 +19,8 @@ export default function StudyPlanningPage() {
   const [loading, setLoading] = useState(true);
   const [activeSession, setActiveSession] = useState<ActiveStudySession | null>(null);
   const [showSubjectSelector, setShowSubjectSelector] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedPlanFilter, setSelectedPlanFilter] = useState<string>('all');
   const { user } = useAuth();
 
   useEffect(() => {
@@ -115,9 +117,9 @@ export default function StudyPlanningPage() {
     }
   };
 
-  // Obter todas as matérias de todos os planos ativos
+  // Obter todas as matérias de todos os planos ativos com filtros
   const getAllActiveSubjects = (): Array<{ planId: string; subject: PlanSubject; planTitle: string }> => {
-    return studyPlans
+    let subjects = studyPlans
       .filter(plan => plan.examDate > new Date())
       .flatMap(plan => 
         plan.subjects.map(subject => ({
@@ -126,187 +128,202 @@ export default function StudyPlanningPage() {
           planTitle: plan.title
         }))
       );
+
+    // Filtrar por plano selecionado
+    if (selectedPlanFilter !== 'all') {
+      subjects = subjects.filter(item => item.planId === selectedPlanFilter);
+    }
+
+    // Filtrar por termo de busca
+    if (searchTerm) {
+      subjects = subjects.filter(item => 
+        item.subject.subjectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.planTitle.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    return subjects;
   };
+
+  // Calcular estatísticas melhoradas
+  const getStats = () => {
+    const activePlans = studyPlans.filter(p => p.examDate > new Date());
+    const totalHoursCompleted = studyPlans.reduce((sum, plan) => 
+      sum + plan.subjects.reduce((subSum, subject) => subSum + subject.completedHours, 0), 0
+    );
+    const totalHoursPlanned = studyPlans.reduce((sum, plan) => sum + plan.totalStudyHours, 0);
+    const completedSubjects = studyPlans.reduce((sum, plan) => 
+      sum + plan.subjects.filter(s => s.completedHours >= s.estimatedHours).length, 0
+    );
+    const totalSubjects = studyPlans.reduce((sum, plan) => sum + plan.subjects.length, 0);
+
+    return {
+      activePlans: activePlans.length,
+      hoursToday: Math.floor((activeSession?.seconds || 0) / 3600),
+      completedSubjects,
+      totalSubjects,
+      overallProgress: totalHoursPlanned > 0 ? (totalHoursCompleted / totalHoursPlanned) * 100 : 0
+    };
+  };
+
+  const stats = getStats();
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600 font-medium">Carregando seus planos de estudo...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
+        {/* Header Aprimorado */}
         <div className="mb-8">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Dashboard de Estudos</h1>
-              <p className="text-gray-600 mt-2">Gerencie seus planos de estudo com inteligência artificial</p>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                Dashboard de Estudos
+              </h1>
+              <p className="text-gray-600 mt-2 text-lg">Gerencie seus planos de estudo com inteligência artificial</p>
             </div>
             <button
               onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-4 rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 flex items-center gap-3 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
             >
-              <Plus className="w-5 h-5" />
-              Novo Plano
+              <Plus className="w-6 h-6" />
+              <span className="font-semibold">Novo Plano</span>
             </button>
           </div>
         </div>
 
-        {/* Cronômetro de Estudos por Matéria */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Cronômetro de Estudos</h2>
+        {/* Cronômetro de Estudos Aprimorado */}
+        <div className="bg-white rounded-2xl shadow-xl p-8 mb-8 border border-gray-100">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-blue-100 rounded-xl">
+                  <Clock className="w-6 h-6 text-blue-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900">Cronômetro de Estudos</h2>
+              </div>
+              
               {activeSession ? (
-                <>
-                  <div className="text-sm text-gray-600 mb-1">Estudando: {activeSession.subjectName}</div>
-                  <div className="text-4xl font-mono font-bold text-blue-600">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-lg font-medium text-gray-700">Estudando: {activeSession.subjectName}</span>
+                  </div>
+                  <div className="text-5xl font-mono font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                     {formatTime(activeSession.seconds)}
                   </div>
-                </>
+                </div>
               ) : (
-                <>
-                  <div className="text-4xl font-mono font-bold text-gray-400">
+                <div className="space-y-3">
+                  <div className="text-5xl font-mono font-bold text-gray-400">
                     00:00:00
                   </div>
-                  <div className="text-sm text-gray-500 mt-1">Selecione uma matéria para começar</div>
-                </>
+                  <div className="text-lg text-gray-500">Selecione uma matéria para começar</div>
+                </div>
               )}
             </div>
-            <div className="flex gap-4">
+            
+            <div className="flex flex-col sm:flex-row gap-4">
               {!activeSession ? (
                 <button
                   onClick={() => setShowSubjectSelector(true)}
-                  className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                  className="bg-gradient-to-r from-green-500 to-emerald-500 text-white px-8 py-4 rounded-xl hover:from-green-600 hover:to-emerald-600 transition-all duration-300 flex items-center gap-3 shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   disabled={getAllActiveSubjects().length === 0}
                 >
-                  <Play className="w-5 h-5" />
-                  Iniciar Estudo
+                  <Play className="w-6 h-6" />
+                  <span className="font-semibold">Iniciar Estudo</span>
                 </button>
               ) : (
                 <button
                   onClick={stopStudySession}
-                  className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                  className="bg-gradient-to-r from-red-500 to-rose-500 text-white px-8 py-4 rounded-xl hover:from-red-600 hover:to-rose-600 transition-all duration-300 flex items-center gap-3 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                 >
-                  <Pause className="w-5 h-5" />
-                  Finalizar Sessão
+                  <Pause className="w-6 h-6" />
+                  <span className="font-semibold">Finalizar Sessão</span>
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Cards de Estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Planos Ativos</p>
-                <p className="text-2xl font-bold text-gray-900">{studyPlans.filter(p => p.examDate > new Date()).length}</p>
-              </div>
-              <Calendar className="w-8 h-8 text-blue-600" />
-            </div>
-          </div>
+        {/* Cards de Estatísticas Aprimorados */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <StatCard
+            title="Planos Ativos"
+            value={stats.activePlans}
+            icon={Calendar}
+            color="blue"
+            trend="+2 este mês"
+          />
           
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Horas Hoje</p>
-                <p className="text-2xl font-bold text-gray-900">{Math.floor((activeSession?.seconds || 0) / 3600)}</p>
-              </div>
-              <Clock className="w-8 h-8 text-green-600" />
-            </div>
-          </div>
+          <StatCard
+            title="Horas Hoje"
+            value={stats.hoursToday}
+            icon={Clock}
+            color="green"
+            trend={activeSession ? 'Em andamento' : 'Parado'}
+          />
           
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Metas Atingidas</p>
-                <p className="text-2xl font-bold text-gray-900">0</p>
-              </div>
-              <Target className="w-8 h-8 text-yellow-600" />
-            </div>
-          </div>
+          <StatCard
+            title="Matérias Concluídas"
+            value={`${stats.completedSubjects}/${stats.totalSubjects}`}
+            icon={Award}
+            color="yellow"
+            trend={`${((stats.completedSubjects / stats.totalSubjects) * 100 || 0).toFixed(0)}% completo`}
+          />
           
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Progresso Geral</p>
-                <p className="text-2xl font-bold text-gray-900">0%</p>
-              </div>
-              <TrendingUp className="w-8 h-8 text-purple-600" />
-            </div>
-          </div>
+          <StatCard
+            title="Progresso Geral"
+            value={`${stats.overallProgress.toFixed(1)}%`}
+            icon={TrendingUp}
+            color="purple"
+            trend="Mantendo ritmo"
+          />
         </div>
 
-        {/* Lista de Planos */}
-        <div className="space-y-6">
+        {/* Lista de Planos Aprimorada */}
+        <div className="space-y-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-900">Seus Planos de Estudo</h2>
+            {studyPlans.length > 0 && (
+              <div className="text-sm text-gray-500">
+                {studyPlans.length} plano{studyPlans.length !== 1 ? 's' : ''} criado{studyPlans.length !== 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
+          
           {studyPlans.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-              <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Nenhum plano de estudos</h3>
-              <p className="text-gray-600 mb-6">Crie seu primeiro plano de estudos personalizado com IA</p>
-              <button
-                onClick={() => setShowCreateForm(true)}
-                className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Criar Primeiro Plano
-              </button>
-            </div>
+            <EmptyState onCreatePlan={() => setShowCreateForm(true)} />
           ) : (
-            studyPlans.map(plan => (
-              <StudyPlanCard key={plan.id} plan={plan} onUpdate={loadStudyPlans} />
-            ))
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {studyPlans.map(plan => (
+                <StudyPlanCard key={plan.id} plan={plan} onUpdate={loadStudyPlans} />
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Modal de Seleção de Matérias */}
+        {/* Modal de Seleção de Matérias Aprimorado */}
         {showSubjectSelector && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl max-w-md w-full">
-              <div className="p-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">Selecionar Matéria</h2>
-                <p className="text-gray-600 mb-6">Escolha a matéria que você vai estudar:</p>
-                
-                <div className="space-y-3 max-h-60 overflow-y-auto">
-                  {getAllActiveSubjects().map(({ planId, subject, planTitle }) => (
-                    <button
-                      key={`${planId}-${subject.id}`}
-                      onClick={() => startStudySession(planId, subject.id, subject.subjectName)}
-                      className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors"
-                    >
-                      <div className="font-medium text-gray-900">{subject.subjectName}</div>
-                      <div className="text-sm text-gray-500">{planTitle}</div>
-                      <div className="text-xs text-gray-400 mt-1">
-                        {subject.completedHours}h / {subject.estimatedHours}h concluídas
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                
-                {getAllActiveSubjects().length === 0 && (
-                  <div className="text-center py-8">
-                    <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-500">Nenhuma matéria disponível</p>
-                    <p className="text-sm text-gray-400">Crie um plano de estudos primeiro</p>
-                  </div>
-                )}
-                
-                <div className="flex justify-end mt-6">
-                  <button
-                    onClick={() => setShowSubjectSelector(false)}
-                    className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SubjectSelectorModal
+            subjects={getAllActiveSubjects()}
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            selectedPlanFilter={selectedPlanFilter}
+            setSelectedPlanFilter={setSelectedPlanFilter}
+            studyPlans={studyPlans}
+            onSelectSubject={startStudySession}
+            onClose={() => setShowSubjectSelector(false)}
+          />
         )}
 
         {/* Modal de Criação */}
@@ -324,51 +341,296 @@ export default function StudyPlanningPage() {
   );
 }
 
-// Componente do Card do Plano
+// Componente de Card de Estatística
+function StatCard({ title, value, icon: Icon, color, trend }: {
+  title: string;
+  value: string | number;
+  icon: React.ElementType;
+  color: 'blue' | 'green' | 'yellow' | 'purple';
+  trend: string;
+}) {
+  const colorClasses = {
+    blue: 'from-blue-500 to-blue-600 bg-blue-100 text-blue-600',
+    green: 'from-green-500 to-green-600 bg-green-100 text-green-600',
+    yellow: 'from-yellow-500 to-yellow-600 bg-yellow-100 text-yellow-600',
+    purple: 'from-purple-500 to-purple-600 bg-purple-100 text-purple-600'
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+      <div className="flex items-center justify-between mb-4">
+        <div className={`p-3 rounded-xl ${colorClasses[color].split(' ')[2]} ${colorClasses[color].split(' ')[3]}`}>
+          <Icon className="w-6 h-6" />
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-medium text-gray-600">{title}</p>
+          <p className="text-2xl font-bold text-gray-900">{value}</p>
+        </div>
+      </div>
+      <div className="text-xs text-gray-500 font-medium">{trend}</div>
+    </div>
+  );
+}
+
+// Componente de Estado Vazio
+function EmptyState({ onCreatePlan }: { onCreatePlan: () => void }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-lg p-12 text-center border border-gray-100">
+      <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+        <BarChart3 className="w-10 h-10 text-blue-600" />
+      </div>
+      <h3 className="text-2xl font-bold text-gray-900 mb-3">Nenhum plano de estudos</h3>
+      <p className="text-gray-600 mb-8 max-w-md mx-auto">
+        Crie seu primeiro plano de estudos personalizado com IA e comece sua jornada rumo à aprovação
+      </p>
+      <button
+        onClick={onCreatePlan}
+        className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-4 rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+      >
+        Criar Primeiro Plano
+      </button>
+    </div>
+  );
+}
+
+// Modal de Seleção de Matérias Aprimorado
+function SubjectSelectorModal({
+  subjects,
+  searchTerm,
+  setSearchTerm,
+  selectedPlanFilter,
+  setSelectedPlanFilter,
+  studyPlans,
+  onSelectSubject,
+  onClose
+}: {
+  subjects: Array<{ planId: string; subject: PlanSubject; planTitle: string }>;
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+  selectedPlanFilter: string;
+  setSelectedPlanFilter: (filter: string) => void;
+  studyPlans: StudyPlan[];
+  onSelectSubject: (planId: string, subjectId: string, subjectName: string) => void;
+  onClose: () => void;
+}) {
+  const activePlans = studyPlans.filter(p => p.examDate > new Date());
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-2xl">
+        <div className="p-6 border-b border-gray-100">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Selecionar Matéria para Estudar</h2>
+          
+          {/* Filtros e Busca */}
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Buscar matéria..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 flex-wrap">
+              <Filter className="w-5 h-5 text-gray-400" />
+              <button
+                onClick={() => setSelectedPlanFilter('all')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  selectedPlanFilter === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Todos os Planos
+              </button>
+              {activePlans.map(plan => (
+                <button
+                  key={plan.id}
+                  onClick={() => setSelectedPlanFilter(plan.id)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedPlanFilter === plan.id
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {plan.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        <div className="p-6 max-h-96 overflow-y-auto">
+          {subjects.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3">
+              {subjects.map(({ planId, subject, planTitle }) => {
+                const progressPercentage = (subject.completedHours / subject.estimatedHours) * 100;
+                const isCompleted = subject.completedHours >= subject.estimatedHours;
+                
+                return (
+                  <button
+                    key={`${planId}-${subject.id}`}
+                    onClick={() => onSelectSubject(planId, subject.id, subject.subjectName)}
+                    className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">
+                        {subject.subjectName}
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                    </div>
+                    
+                    <div className="text-sm text-gray-600 mb-2">{planTitle}</div>
+                    
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-xs text-gray-500">
+                        {subject.completedHours.toFixed(1)}h / {subject.estimatedHours}h concluídas
+                      </div>
+                      <div className={`text-xs font-medium ${
+                        isCompleted ? 'text-green-600' : 'text-blue-600'
+                      }`}>
+                        {progressPercentage.toFixed(0)}%
+                      </div>
+                    </div>
+                    
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full transition-all duration-300 ${
+                          isCompleted ? 'bg-green-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${Math.min(progressPercentage, 100)}%` }}
+                      ></div>
+                    </div>
+                    
+                    {isCompleted && (
+                      <div className="flex items-center gap-1 mt-2">
+                        <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                        <span className="text-xs text-green-600 font-medium">Concluída</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500 text-lg font-medium mb-2">
+                {searchTerm ? 'Nenhuma matéria encontrada' : 'Nenhuma matéria disponível'}
+              </p>
+              <p className="text-sm text-gray-400">
+                {searchTerm ? 'Tente buscar por outro termo' : 'Crie um plano de estudos primeiro'}
+              </p>
+            </div>
+          )}
+        </div>
+        
+        <div className="p-6 border-t border-gray-100">
+          <div className="flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-6 py-3 text-gray-600 hover:text-gray-800 transition-colors font-medium"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ...existing code ...
+
+// Componente do Card do Plano Aprimorado
 function StudyPlanCard({ plan, onUpdate }: { plan: StudyPlan; onUpdate: () => void }) {
   const daysUntilExam = Math.ceil((plan.examDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
   const totalCompleted = plan.subjects.reduce((sum, s) => sum + s.completedHours, 0);
   const progressPercentage = (totalCompleted / plan.totalStudyHours) * 100;
+  const isExpired = daysUntilExam <= 0;
+  const isUrgent = daysUntilExam <= 7 && daysUntilExam > 0;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
-      <div className="flex justify-between items-start mb-4">
-        <div>
-          <h3 className="text-xl font-semibold text-gray-900">{plan.title}</h3>
-          <p className="text-gray-600">{plan.examName}</p>
-          <p className="text-sm text-gray-500 mt-1">
-            {daysUntilExam > 0 ? `${daysUntilExam} dias restantes` : 'Exame passou'}
+    <div className={`bg-white rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1 ${
+      isExpired ? 'border-red-200 bg-red-50' : isUrgent ? 'border-yellow-200 bg-yellow-50' : 'border-gray-100'
+    }`}>
+      <div className="flex justify-between items-start mb-6">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="text-xl font-bold text-gray-900">{plan.title}</h3>
+            {isUrgent && <Zap className="w-5 h-5 text-yellow-500" />}
+            {isExpired && <div className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">Expirado</div>}
+          </div>
+          <p className="text-gray-600 font-medium">{plan.examName}</p>
+          <p className={`text-sm font-medium mt-1 ${
+            isExpired ? 'text-red-600' : isUrgent ? 'text-yellow-600' : 'text-gray-500'
+          }`}>
+            {isExpired ? 'Exame passou' : `${daysUntilExam} dias restantes`}
           </p>
         </div>
         <div className="text-right">
-          <div className="text-2xl font-bold text-blue-600">{progressPercentage.toFixed(1)}%</div>
-          <div className="text-sm text-gray-500">{totalCompleted}h / {plan.totalStudyHours}h</div>
+          <div className={`text-3xl font-bold ${
+            progressPercentage >= 100 ? 'text-green-600' : progressPercentage >= 75 ? 'text-blue-600' : 'text-gray-700'
+          }`}>
+            {progressPercentage.toFixed(1)}%
+          </div>
+          <div className="text-sm text-gray-500 font-medium">
+            {totalCompleted.toFixed(1)}h / {plan.totalStudyHours}h
+          </div>
         </div>
       </div>
       
-      <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+      <div className="w-full bg-gray-200 rounded-full h-3 mb-6">
         <div 
-          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+          className={`h-3 rounded-full transition-all duration-500 ${
+            progressPercentage >= 100 ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+          }`}
           style={{ width: `${Math.min(progressPercentage, 100)}%` }}
         ></div>
       </div>
       
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {plan.subjects.slice(0, 4).map(subject => (
-          <div key={subject.id} className="text-center">
-            <div className="text-sm font-medium text-gray-900">{subject.subjectName}</div>
-            <div className="text-xs text-gray-500">
-              {subject.completedHours}h / {subject.estimatedHours}h
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {plan.subjects.slice(0, 4).map(subject => {
+          const subjectProgress = (subject.completedHours / subject.estimatedHours) * 100;
+          const isSubjectCompleted = subject.completedHours >= subject.estimatedHours;
+          
+          return (
+            <div key={subject.id} className="text-center p-3 bg-gray-50 rounded-xl">
+              <div className="text-sm font-semibold text-gray-900 mb-1 truncate" title={subject.subjectName}>
+                {subject.subjectName}
+              </div>
+              <div className="text-xs text-gray-600 mb-2">
+                {subject.completedHours.toFixed(1)}h / {subject.estimatedHours}h
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
+                <div 
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    isSubjectCompleted ? 'bg-green-500' : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${Math.min(subjectProgress, 100)}%` }}
+                ></div>
+              </div>
+              {isSubjectCompleted && (
+                <div className="flex items-center justify-center gap-1">
+                  <Star className="w-3 h-3 text-yellow-500 fill-current" />
+                  <span className="text-xs text-green-600 font-medium">OK</span>
+                </div>
+              )}
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
-              <div 
-                className="bg-green-500 h-1 rounded-full"
-                style={{ width: `${Math.min((subject.completedHours / subject.estimatedHours) * 100, 100)}%` }}
-              ></div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+      
+      {plan.subjects.length > 4 && (
+        <div className="text-center mt-4">
+          <span className="text-sm text-gray-500">
+            +{plan.subjects.length - 4} matérias adicionais
+          </span>
+        </div>
+      )}
     </div>
   );
 }
