@@ -114,16 +114,19 @@ export default function LibraryPage() {
     const hasShort = doc.summary_short;
     const hasMedium = doc.summary_medium;
     const hasDetailed = doc.summary_detailed;
+    const hasStudyGuide = doc.study_guide;
     
-    if (hasDetailed) {
+    if (hasStudyGuide) {
+      return <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">🎯 Guia de Estudos</span>;
+    } else if (hasDetailed) {
       return <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700">Detalhado</span>;
     } else if (hasMedium) {
       return <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Médio</span>;
     } else if (hasShort) {
       return <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Curto</span>;
+    } else {
+      return <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">Processando</span>;
     }
-    
-    return <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">Processando</span>;
   };
 
   if (!user) {

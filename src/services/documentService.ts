@@ -152,15 +152,41 @@ export class DocumentService {
   }
 
   static async updateDocument(id: string, updates: DocumentUpdate): Promise<Document> {
-    const { data, error } = await supabase
-      .from('documents')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    console.log('🔍 [DEBUG] DocumentService.updateDocument chamado');
+    console.log('🔍 [DEBUG] ID do documento:', id);
+    console.log('🔍 [DEBUG] Dados para atualização:', {
+      ...updates,
+      summary_short: updates.summary_short ? `${updates.summary_short.substring(0, 50)}... (${updates.summary_short.length} chars)` : null,
+      summary_medium: updates.summary_medium ? `${updates.summary_medium.substring(0, 50)}... (${updates.summary_medium.length} chars)` : null,
+      summary_detailed: updates.summary_detailed ? `${updates.summary_detailed.substring(0, 50)}... (${updates.summary_detailed.length} chars)` : null,
+      study_guide: updates.study_guide ? `${updates.study_guide.substring(0, 50)}... (${updates.study_guide.length} chars)` : null
+    });
 
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('documents')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('🔍 [DEBUG] Erro do Supabase:', error);
+        console.error('🔍 [DEBUG] Detalhes do erro:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
+
+      console.log('🔍 [DEBUG] Documento atualizado com sucesso:', data.id);
+      return data;
+    } catch (error) {
+      console.error('🔍 [DEBUG] Erro na função updateDocument:', error);
+      throw error;
+    }
   }
 
   static async deleteDocument(id: string): Promise<void> {

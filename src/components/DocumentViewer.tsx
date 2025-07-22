@@ -14,7 +14,7 @@ interface DocumentViewerProps {
 }
 
 export default function DocumentViewer({ document, isOpen, onClose, onUpdate }: DocumentViewerProps) {
-  const [activeTab, setActiveTab] = useState<'short' | 'medium' | 'detailed'>('medium');
+  const [activeTab, setActiveTab] = useState<'short' | 'medium' | 'detailed' | 'study_guide'>('medium');
   const [showOriginal, setShowOriginal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(document.title);
@@ -56,6 +56,7 @@ export default function DocumentViewer({ document, isOpen, onClose, onUpdate }: 
       case 'short': return document.summary_short;
       case 'medium': return document.summary_medium;
       case 'detailed': return document.summary_detailed;
+      case 'study_guide': return document.study_guide;
       default: return document.summary_medium;
     }
   };
@@ -63,13 +64,14 @@ export default function DocumentViewer({ document, isOpen, onClose, onUpdate }: 
   const formatContent = (content: string | null) => {
     if (!content) return 'Resumo não disponível';
     
-    // Convert markdown-like formatting to HTML
+    // Enhanced markdown formatting for study guide
     return content
       .replace(/### (.*)/g, '<h3 class="text-lg font-semibold text-gray-800 mt-4 mb-2">$1</h3>')
       .replace(/## (.*)/g, '<h2 class="text-xl font-bold text-gray-800 mt-6 mb-3">$1</h2>')
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-800">$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
-      .replace(/• (.*)/g, '<li class="ml-4">$1</li>')
+      .replace(/\*(.*?)\*/g, '<em class="italic text-gray-700">$1</em>')
+      .replace(/• (.*)/g, '<li class="ml-4 mb-1">$1</li>')
+      .replace(/- (.*)/g, '<li class="ml-4 mb-1">$1</li>')
       .replace(/\n\n/g, '<br><br>')
       .replace(/\n/g, '<br>');
   };
@@ -180,20 +182,22 @@ export default function DocumentViewer({ document, isOpen, onClose, onUpdate }: 
             {/* Summary Tabs */}
             <div className="flex border-b border-gray-100">
               {[
-                { id: 'short', label: 'Curto', color: 'green' },
-                { id: 'medium', label: 'Médio', color: 'blue' },
-                { id: 'detailed', label: 'Detalhado', color: 'purple' }
+                { id: 'short', label: 'Curto', color: 'green', icon: '📝' },
+                { id: 'medium', label: 'Médio', color: 'blue', icon: '📄' },
+                { id: 'detailed', label: 'Detalhado', color: 'purple', icon: '📋' },
+                { id: 'study_guide', label: 'Guia de Estudos', color: 'orange', icon: '🎯' }
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors duration-200 ${
+                  className={`flex-1 px-3 py-3 text-sm font-medium transition-colors duration-200 flex items-center justify-center space-x-1 ${
                     activeTab === tab.id
                       ? `text-${tab.color}-600 border-b-2 border-${tab.color}-500 bg-${tab.color}-50`
                       : 'text-gray-600 hover:text-gray-800'
                   }`}
                 >
-                  Resumo {tab.label}
+                  <span>{tab.icon}</span>
+                  <span>{tab.label}</span>
                 </button>
               ))}
             </div>

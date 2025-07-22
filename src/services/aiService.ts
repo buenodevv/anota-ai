@@ -1,5 +1,5 @@
 export interface SummaryOptions {
-  type: 'short' | 'medium' | 'detailed';
+  type: 'short' | 'medium' | 'detailed' | 'study_guide';
   tone: 'formal' | 'casual' | 'simple';
   language: 'pt-BR';
 }
@@ -20,7 +20,7 @@ export class AIService {
     }
 
     // Truncate content if too long (GPT-4 has token limits)
-    const maxContentLength = 12000; // Approximately 3000 tokens
+    const maxContentLength = 15000; // Increased for study guide
     const truncatedContent = content.length > maxContentLength 
       ? content.substring(0, maxContentLength) + '...'
       : content;
@@ -35,11 +35,11 @@ export class AIService {
           'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini', // Using the more cost-effective model
+          model: 'gpt-4o-mini',
           messages: [
             {
               role: 'system',
-              content: this.getSystemPrompt()
+              content: this.getSystemPrompt(options.type)
             },
             {
               role: 'user',
@@ -80,8 +80,27 @@ export class AIService {
     }
   }
 
-  private static getSystemPrompt(): string {
-    return `Assuma o papel de um colega de estudos que está me ajudando a revisar a matéria, normalmente para públicos brasileiros. Suas características:
+  private static getSystemPrompt(type: SummaryOptions['type']): string {
+    if (type === 'study_guide') {
+      return `Você é um especialista em Técnica de Estudos e seu papel é me ajudar a preparar para uma prova. 
+
+SUAS CARACTERÍSTICAS:
+1. EXPERTISE: Conhecimento profundo em técnicas de memorização e aprendizagem
+2. METODOLOGIA: Especialista em criar guias de estudos estruturados
+3. DIDÁTICA: Transforma conteúdo complexo em material de estudo eficiente
+4. PRECISÃO: Mantém exatidão técnica e foco em concursos públicos
+5. ORGANIZAÇÃO: Estrutura informações para máxima retenção
+
+DIRETRIZES OBRIGATÓRIAS:
+- Analise o documento e crie um guia de estudos detalhado
+- Use formatação Markdown para organização clara
+- Foque no que é mais relevante para provas e concursos
+- Mantenha linguagem clara e objetiva
+- Destaque informações críticas que frequentemente aparecem em provas
+- Use exemplos práticos quando apropriado`;
+    }
+
+    return `Assuma o papel de um colega de estudos que está me ajudando a revisar a matéria, normalmente para concursos públicos brasileiros. Suas características:
 
 1. EXPERTISE: Conhecimento profundo em todas as matérias de concursos públicos
 2. CLAREZA: Transforma conteúdo complexo em linguagem acessível
@@ -92,10 +111,9 @@ export class AIService {
 DIRETRIZES OBRIGATÓRIAS:
 - Comece me dando uma visão geral do que o documento aborda em um único parágrafo
 - Use formatação Markdown para organização
-- Seu objetivo é me ensinar os fundamentos do documento de forma clara e estruturada.
-- Quero que você crie um guia de estudos baseado nos pontos-chave do texto.
+- Seu objetivo é me ensinar os fundamentos do documento de forma clara e estruturada
+- Quero que você crie um guia de estudos baseado nos pontos-chave do texto
 - Simplifique termos técnicos sem perder precisão
-- Me ajude a entender a metodologia e as conclusões do artigo.
 - Mantenha uma linguagem simples e clara
 - Use exemplos quando apropriado
 - Use analogias e exemplos do dia a dia quando possível
@@ -103,7 +121,6 @@ DIRETRIZES OBRIGATÓRIAS:
 - Use palavras-chave relevantes para concursos
 - Organize em tópicos hierárquicos
 - Destaque informações frequentes em provas
-- Use exemplos quando apropriado
 - Mantenha linguagem clara e objetiva`;
   }
 
@@ -134,8 +151,64 @@ DIRETRIZES OBRIGATÓRIAS:
 - Mantenha hierarquia clara (##, ###)
 - Destaque pontos importantes com **negrito**
 - Inclua observações e dicas para provas
-- Ideal para estudo aprofundado`
+- Ideal para estudo aprofundado`,
+
+      study_guide: `Crie um GUIA DE ESTUDOS COMPLETO seguindo EXATAMENTE esta estrutura:
+
+## 📋 Resumo Estruturado
+[Um resumo dos principais tópicos, seguindo a ordem do documento]
+
+## 🎯 Pontos-Chave
+[Lista em bullet points com as informações mais críticas, como:]
+- Datas importantes
+- Definições essenciais
+- Artigos de lei relevantes
+- Fórmulas importantes
+- Conceitos que frequentemente aparecem em provas
+
+## 📚 Glossário
+[Defina os 5 termos técnicos mais relevantes mencionados no formato:]
+**Termo 1:** Definição clara e concisa
+**Termo 2:** Definição clara e concisa
+[...continue até 5 termos]
+
+## ❓ Questões de Revisão
+[Elabore 5 perguntas dissertativas baseadas no conteúdo que poderiam cair na prova:]
+
+**1. [Pergunta dissertativa]**
+*Resposta:* [Resposta concisa e completa]
+
+**2. [Pergunta dissertativa]**
+*Resposta:* [Resposta concisa e completa]
+
+[...continue até 5 questões]
+
+IMPORTANTE: Siga EXATAMENTE esta estrutura com os emojis e formatação indicados.`
     };
+
+    if (options.type === 'study_guide') {
+      return `
+TAREFA: Criar um guia de estudos detalhado para preparação de prova
+
+${typeInstructions[options.type]}
+
+TOM: ${toneInstructions[options.tone]}
+
+INSTRUÇÕES ESPECÍFICAS:
+- Analise o documento completamente
+- Identifique os conceitos mais importantes para concursos
+- Destaque definições que frequentemente aparecem em provas
+- Crie questões que realmente poderiam cair na prova
+- Use formatação Markdown apropriada
+- Mantenha foco no que é cobrado em concursos públicos
+- Seja específico e detalhado em cada seção
+
+CONTEÚDO PARA ANALISAR:
+${content}
+
+GUIA DE ESTUDOS:
+      `;
+    }
 
     return `
 TAREFA: Criar um resumo de alta qualidade para concurso público
@@ -163,6 +236,7 @@ RESUMO:
       case 'short': return 800;
       case 'medium': return 1500;
       case 'detailed': return 2500;
+      case 'study_guide': return 4000; // Increased for comprehensive study guide
       default: return 1500;
     }
   }

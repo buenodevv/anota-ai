@@ -16,7 +16,7 @@ function App() {
       case 'home':
         return <HomePage onPageChange={setCurrentPage} />;
       case 'upload':
-        return <UploadPage />;
+        return <UploadPage onPageChange={setCurrentPage} />;
       case 'library':
         return <LibraryPage />;
       case 'planning':

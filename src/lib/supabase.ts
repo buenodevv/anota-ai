@@ -25,6 +25,7 @@ export type Database = {
           summary_short: string | null;
           summary_medium: string | null;
           summary_detailed: string | null;
+          study_guide: string | null;
           category: string | null;
           tags: string[] | null;
           is_favorite: boolean;
@@ -44,6 +45,7 @@ export type Database = {
           summary_short?: string | null;
           summary_medium?: string | null;
           summary_detailed?: string | null;
+          study_guide?: string | null;
           category?: string | null;
           tags?: string[] | null;
           is_favorite?: boolean;
@@ -63,6 +65,7 @@ export type Database = {
           summary_short?: string | null;
           summary_medium?: string | null;
           summary_detailed?: string | null;
+          study_guide?: string | null;
           category?: string | null;
           tags?: string[] | null;
           is_favorite?: boolean;
@@ -75,7 +78,7 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
-          default_summary_type: 'short' | 'medium' | 'detailed';
+          default_summary_type: 'short' | 'medium' | 'detailed' | 'study_guide';
           auto_categorize: boolean;
           preferred_tone: 'formal' | 'casual' | 'simple';
           created_at: string;
@@ -84,7 +87,7 @@ export type Database = {
         Insert: {
           id?: string;
           user_id: string;
-          default_summary_type?: 'short' | 'medium' | 'detailed';
+          default_summary_type?: 'short' | 'medium' | 'detailed' | 'study_guide';
           auto_categorize?: boolean;
           preferred_tone?: 'formal' | 'casual' | 'simple';
           created_at?: string;
@@ -93,7 +96,7 @@ export type Database = {
         Update: {
           id?: string;
           user_id?: string;
-          default_summary_type?: 'short' | 'medium' | 'detailed';
+          default_summary_type?: 'short' | 'medium' | 'detailed' | 'study_guide';
           auto_categorize?: boolean;
           preferred_tone?: 'formal' | 'casual' | 'simple';
           created_at?: string;

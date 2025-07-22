@@ -20,12 +20,16 @@ interface Document {
 }
 
 interface ProcessingOptions {
-  summaryType: 'short' | 'medium' | 'detailed';
+  summaryType: 'short' | 'medium' | 'detailed' | 'study_guide';
   tone: 'formal' | 'casual' | 'simple';
   autoCategory: boolean;
 }
 
-export default function UploadPage() {
+interface UploadPageProps {
+  onPageChange?: (page: string) => void;
+}
+
+export default function UploadPage({ onPageChange }: UploadPageProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -39,6 +43,7 @@ export default function UploadPage() {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
+  // Removido: const navigate = useNavigate();
 
   const handleFileSelect = (files: FileList | null) => {
     if (!files) return;
@@ -94,9 +99,12 @@ export default function UploadPage() {
     if (!doc.file || !user) return;
 
     try {
+      console.log('🔍 [DEBUG] Iniciando processamento do documento:', doc.name);
+      
       // Step 1: Extract text from file
       updateDocumentStatus(doc.id, 'uploading', 20, 'Extraindo texto do arquivo...');
       const content = await DocumentService.extractTextFromFile(doc.file);
+      console.log('🔍 [DEBUG] Texto extraído, tamanho:', content.length);
       
       if (content.length < 100) {
         throw new Error('Conteúdo muito curto para processar. O arquivo deve ter pelo menos 100 caracteres.');
@@ -105,6 +113,7 @@ export default function UploadPage() {
       // Step 2: Upload file to storage
       updateDocumentStatus(doc.id, 'uploading', 40, 'Fazendo upload do arquivo...');
       const fileUrl = await DocumentService.uploadFile(doc.file, user.id);
+      console.log('🔍 [DEBUG] Arquivo enviado para:', fileUrl);
       
       // Step 3: Create document record
       updateDocumentStatus(doc.id, 'uploading', 60, 'Salvando documento...');
@@ -119,30 +128,51 @@ export default function UploadPage() {
         processing_status: 'processing' as const
       };
       
+      console.log('🔍 [DEBUG] Dados do documento para criação:', {
+        ...documentData,
+        content: `${content.substring(0, 100)}... (${content.length} chars)`
+      });
+      
       const createdDoc = await DocumentService.createDocument(documentData);
+      console.log('🔍 [DEBUG] Documento criado com ID:', createdDoc.id);
       updateDocumentStatus(doc.id, 'processing', 0, 'Iniciando processamento com IA...');
       
       // Step 4: Generate summaries with AI
-      updateDocumentStatus(doc.id, 'processing', 20, 'Gerando resumo curto...');
+      updateDocumentStatus(doc.id, 'processing', 15, 'Gerando resumo curto...');
+      console.log('🔍 [DEBUG] Gerando resumo curto...');
       const shortSummary = await AIService.generateSummary(content, {
         type: 'short',
         tone: processingOptions.tone,
         language: 'pt-BR'
       });
+      console.log('🔍 [DEBUG] Resumo curto gerado, tamanho:', shortSummary.length);
 
-      updateDocumentStatus(doc.id, 'processing', 40, 'Gerando resumo médio...');
+      updateDocumentStatus(doc.id, 'processing', 30, 'Gerando resumo médio...');
+      console.log('🔍 [DEBUG] Gerando resumo médio...');
       const mediumSummary = await AIService.generateSummary(content, {
         type: 'medium',
         tone: processingOptions.tone,
         language: 'pt-BR'
       });
+      console.log('🔍 [DEBUG] Resumo médio gerado, tamanho:', mediumSummary.length);
 
-      updateDocumentStatus(doc.id, 'processing', 60, 'Gerando resumo detalhado...');
+      updateDocumentStatus(doc.id, 'processing', 45, 'Gerando resumo detalhado...');
+      console.log('🔍 [DEBUG] Gerando resumo detalhado...');
       const detailedSummary = await AIService.generateSummary(content, {
         type: 'detailed',
         tone: processingOptions.tone,
         language: 'pt-BR'
       });
+      console.log('🔍 [DEBUG] Resumo detalhado gerado, tamanho:', detailedSummary.length);
+
+      updateDocumentStatus(doc.id, 'processing', 60, 'Gerando guia de estudos...');
+      console.log('🔍 [DEBUG] Gerando guia de estudos...');
+      const studyGuide = await AIService.generateSummary(content, {
+        type: 'study_guide',
+        tone: processingOptions.tone,
+        language: 'pt-BR'
+      });
+      console.log('🔍 [DEBUG] Guia de estudos gerado, tamanho:', studyGuide.length);
       
       // Step 5: Auto-categorize and extract tags
       let category = null;
@@ -150,28 +180,52 @@ export default function UploadPage() {
       
       if (processingOptions.autoCategory) {
         updateDocumentStatus(doc.id, 'processing', 80, 'Categorizando documento...');
+        console.log('🔍 [DEBUG] Categorizando documento...');
         category = await AIService.categorizeDocument(content);
+        console.log('🔍 [DEBUG] Categoria gerada:', category);
         
         updateDocumentStatus(doc.id, 'processing', 90, 'Extraindo tags...');
+        console.log('🔍 [DEBUG] Extraindo tags...');
         tags = await AIService.extractTags(content);
+        console.log('🔍 [DEBUG] Tags geradas:', tags);
       }
       
       // Step 6: Update document with summaries
       updateDocumentStatus(doc.id, 'processing', 95, 'Finalizando...');
-      await DocumentService.updateDocument(createdDoc.id, {
+      console.log('🔍 [DEBUG] Atualizando documento com resumos...');
+      
+      const updateData = {
         summary_short: shortSummary,
         summary_medium: mediumSummary,
         summary_detailed: detailedSummary,
+        study_guide: studyGuide,
         category,
         tags,
         processing_status: 'completed'
+      };
+      
+      console.log('🔍 [DEBUG] Dados para atualização:', {
+        ...updateData,
+        summary_short: `${shortSummary.substring(0, 50)}... (${shortSummary.length} chars)`,
+        summary_medium: `${mediumSummary.substring(0, 50)}... (${mediumSummary.length} chars)`,
+        summary_detailed: `${detailedSummary.substring(0, 50)}... (${detailedSummary.length} chars)`,
+        study_guide: `${studyGuide.substring(0, 50)}... (${studyGuide.length} chars)`
       });
+      
+      await DocumentService.updateDocument(createdDoc.id, updateData);
+      console.log('🔍 [DEBUG] Documento atualizado com sucesso!');
       
       updateDocumentStatus(doc.id, 'completed', 100, 'Processamento concluído!');
       toast.success(`${doc.name} processado com sucesso!`);
       
     } catch (error) {
-      console.error('Error processing document:', error);
+      console.error('🔍 [DEBUG] Error processing document:', error);
+      console.error('🔍 [DEBUG] Error details:', {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      });
+      
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       updateDocumentStatus(doc.id, 'error', 0, errorMessage);
       toast.error(`Erro ao processar ${doc.name}: ${errorMessage}`);
@@ -382,6 +436,7 @@ export default function UploadPage() {
                 <option value="short">Curto (Bullet Points)</option>
                 <option value="medium">Médio (Conceitual)</option>
                 <option value="detailed">Detalhado (Estruturado)</option>
+                <option value="study_guide">Guia de Estudos (Completo)</option>
               </select>
             </div>
 
@@ -648,7 +703,7 @@ export default function UploadPage() {
                 Seus resumos foram gerados com IA e estão disponíveis na biblioteca.
               </p>
               <button
-                onClick={() => navigate('/library')}
+                onClick={() => onPageChange?.('library')}
                 className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-6 py-3 rounded-xl font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200"
               >
                 Ver na Biblioteca
