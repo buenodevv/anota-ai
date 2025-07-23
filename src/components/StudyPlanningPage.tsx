@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Clock, Target, TrendingUp, Plus, Play, Pause, BarChart3, BookOpen, FileText, Search, Filter, Star, Award, Zap, ChevronRight, X } from 'lucide-react';
+import { Calendar, Clock, Target, TrendingUp, Plus, Play, Pause, BarChart3, BookOpen, FileText, Search, Filter, Star, Award, Zap, ChevronRight, X, Trash2 } from 'lucide-react';
 import { StudyPlanningService, StudyPlan, StudyPlanRequest, PlanSubject } from '../services/studyPlanningService';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
@@ -50,6 +50,25 @@ export default function StudyPlanningPage() {
       toast.error('Erro ao carregar planos de estudo');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteStudyPlan = async (planId: string, planTitle: string) => {
+    if (!confirm(`Tem certeza que deseja excluir o plano "${planTitle}"? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+
+    try {
+      await StudyPlanningService.deleteStudyPlan(planId);
+      toast.success('Plano de estudos excluído com sucesso!');
+      await loadStudyPlans();
+      // Fechar modal de detalhes se estiver aberto
+      if (selectedPlanDetails === planId) {
+        setSelectedPlanDetails(null);
+      }
+    } catch (error) {
+      console.error('Erro ao excluir plano:', error);
+      toast.error('Erro ao excluir plano de estudos');
     }
   };
 
@@ -312,6 +331,7 @@ export default function StudyPlanningPage() {
                   plan={plan} 
                   onUpdate={loadStudyPlans}
                   onShowDetails={setSelectedPlanDetails}
+                  onDelete={deleteStudyPlan}
                 />
               ))}
             </div>
@@ -323,6 +343,7 @@ export default function StudyPlanningPage() {
           <PlanDetailsModal
             plan={studyPlans.find(p => p.id === selectedPlanDetails)!}
             onClose={() => setSelectedPlanDetails(null)}
+            onDelete={deleteStudyPlan}
           />
         )}
 
@@ -839,21 +860,48 @@ function CreatePlanModal({ onClose, onSuccess }: { onClose: () => void; onSucces
   );
 }
 
-function StudyPlanCard({ plan, onUpdate, onShowDetails }: { plan: StudyPlan; onUpdate: () => void; onShowDetails: (planId: string) => void }) {
+function StudyPlanCard({ plan, onUpdate, onShowDetails, onDelete }: { 
+  plan: StudyPlan; 
+  onUpdate: () => void; 
+  onShowDetails: (planId: string) => void;
+  onDelete: (planId: string, planTitle: string) => void;
+}) {
   const daysUntilExam = Math.ceil((plan.examDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
   const totalCompleted = plan.subjects.reduce((sum, s) => sum + s.completedHours, 0);
   const progressPercentage = (totalCompleted / plan.totalStudyHours) * 100;
   const isExpired = daysUntilExam <= 0;
   const isUrgent = daysUntilExam <= 7 && daysUntilExam > 0;
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Não abrir detalhes se clicou no botão de exclusão
+    if ((e.target as HTMLElement).closest('.delete-button')) {
+      return;
+    }
+    onShowDetails(plan.id);
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete(plan.id, plan.title);
+  };
+
   return (
     <div 
-      className={`bg-white rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1 cursor-pointer ${
+      className={`bg-white rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1 cursor-pointer relative group ${
         isExpired ? 'border-red-200 bg-red-50' : isUrgent ? 'border-yellow-200 bg-yellow-50' : 'border-gray-100'
       }`}
-      onClick={() => onShowDetails(plan.id)}
+      onClick={handleCardClick}
     >
-      <div className="flex justify-between items-start mb-6">
+      {/* Botão de exclusão */}
+      <button
+        onClick={handleDeleteClick}
+        className="delete-button absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100 z-10"
+        title="Excluir plano"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+
+      <div className="flex justify-between items-start mb-6 pr-8">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
             <h3 className="text-xl font-bold text-gray-900">{plan.title}</h3>
@@ -935,12 +983,20 @@ function StudyPlanCard({ plan, onUpdate, onShowDetails }: { plan: StudyPlan; onU
 }
 
 // Modal de Detalhes do Plano
-function PlanDetailsModal({ plan, onClose }: { plan: StudyPlan; onClose: () => void }) {
+function PlanDetailsModal({ plan, onClose, onDelete }: { 
+  plan: StudyPlan; 
+  onClose: () => void;
+  onDelete: (planId: string, planTitle: string) => void;
+}) {
   const daysUntilExam = Math.ceil((plan.examDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
   const totalCompleted = plan.subjects.reduce((sum, s) => sum + s.completedHours, 0);
   const progressPercentage = (totalCompleted / plan.totalStudyHours) * 100;
   const isExpired = daysUntilExam <= 0;
   const isUrgent = daysUntilExam <= 7 && daysUntilExam > 0;
+
+  const handleDeleteClick = () => {
+    onDelete(plan.id, plan.title);
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -975,12 +1031,21 @@ function PlanDetailsModal({ plan, onClose }: { plan: StudyPlan; onClose: () => v
                 {totalCompleted.toFixed(1)}h / {plan.totalStudyHours}h
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X className="w-6 h-6 text-gray-500" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDeleteClick}
+                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                title="Excluir plano"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6 text-gray-500" />
+              </button>
+            </div>
           </div>
           
           {/* Barra de Progresso Geral */}

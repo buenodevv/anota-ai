@@ -125,36 +125,65 @@ export class StudyPlanningService {
   }
 
   private static async generateAIPlan(request: StudyPlanRequest) {
+    const daysUntilExam = Math.ceil(
+      (request.examDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+    );
+    
     const prompt = `
-Crie um plano de estudos detalhado para o concurso "${request.examName}" com as seguintes especificações:
+Você é um especialista em planejamento de estudos para concursos públicos brasileiros. Crie um plano de estudos PRECISO e PERSONALIZADO com base nas informações fornecidas.
 
-- Data da prova: ${request.examDate.toLocaleDateString('pt-BR')}
+DADOS DO CONCURSO:
+- Nome: ${request.examName}
+- Data da prova: ${request.examDate.toLocaleDateString('pt-BR')} (${daysUntilExam} dias restantes)
 - Horas disponíveis por dia: ${request.availableHoursPerDay}h
-- Nível atual: ${request.currentLevel}
+- Nível atual do candidato: ${request.currentLevel}
 - Matérias: ${request.subjects.join(', ')}
-${request.focusAreas ? `- Áreas de foco: ${request.focusAreas.join(', ')}` : ''}
+${request.focusAreas ? `- Áreas de foco prioritário: ${request.focusAreas.join(', ')}` : ''}
 
-Retorne um JSON com a seguinte estrutura:
+INSTRUÇÕES ESPECÍFICAS:
+1. Calcule o tempo total disponível: ${daysUntilExam} dias × ${request.availableHoursPerDay}h = ${daysUntilExam * request.availableHoursPerDay}h
+2. Reserve 20% do tempo para revisões finais
+3. Distribua as matérias considerando:
+   - Peso típico em concursos públicos brasileiros
+   - Nível de dificuldade para o candidato (${request.currentLevel})
+   - Áreas de foco mencionadas
+   - Tempo necessário para dominar cada matéria
+
+DISTRIBUIÇÃO RECOMENDADA PARA CONCURSOS PÚBLICOS:
+- Direito Constitucional: 18-22% (alta incidência)
+- Direito Administrativo: 20-25% (muito cobrado)
+- Português: 12-18% (fundamental)
+- Matemática/Raciocínio Lógico: 8-15% (depende do cargo)
+- Conhecimentos Gerais: 8-12%
+- Informática: 6-10%
+- Outras matérias específicas: distribuir proporcionalmente
+
+AJUSTES POR NÍVEL:
+- Iniciante: +30% tempo para matérias básicas (Português, Constitucional)
+- Intermediário: distribuição equilibrada
+- Avançado: foco em matérias específicas e revisões
+
+Retorne APENAS um JSON válido com esta estrutura exata:
 {
-  "title": "Título do plano",
-  "description": "Descrição detalhada",
-  "totalHours": número_total_de_horas,
+  "title": "Plano de Estudos - [Nome do Concurso]",
+  "description": "Plano personalizado para [nível] com [X]h de estudos distribuídas estrategicamente até [data]",
+  "totalHours": [número_total_calculado],
   "subjects": [
     {
-      "name": "Nome da matéria",
-      "weight": porcentagem_do_tempo,
-      "hours": horas_estimadas,
+      "name": "[Nome_exato_da_matéria]",
+      "weight": [porcentagem_inteira_sem_%],
+      "hours": [horas_calculadas_para_matéria],
       "difficulty": "easy|medium|hard",
-      "priority": número_de_1_a_5
+      "priority": [1-5_baseado_na_importância]
     }
   ]
 }
 
-Considere:
-- Distribuição equilibrada baseada no peso das matérias no edital
-- Tempo para revisões (20% do tempo total)
-- Dificuldade progressiva
-- Intervalos e descanso
+VALIDAÇÕES OBRIGATÓRIAS:
+- A soma dos weights deve ser 100
+- A soma das hours deve corresponder a 80% do tempo total (20% para revisões)
+- Cada matéria deve ter pelo menos 5% do tempo
+- Prioridade 5: matérias mais cobradas, 1: menos cobradas
 `;
 
     const response = await AIService.generateSummary(prompt, {
@@ -164,46 +193,210 @@ Considere:
     });
 
     try {
-      return JSON.parse(response);
-    } catch {
-      // Fallback se a IA não retornar JSON válido
+      const aiPlan = JSON.parse(response);
+      
+      // Validar e corrigir o plano gerado pela IA
+      return this.validateAndCorrectAIPlan(aiPlan, request);
+    } catch (error) {
+      console.warn('Erro ao parsear resposta da IA, usando fallback:', error);
       return this.generateFallbackPlan(request);
     }
+  }
+
+  private static validateAndCorrectAIPlan(aiPlan: any, request: StudyPlanRequest) {
+    const daysUntilExam = Math.ceil(
+      (request.examDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const totalAvailableHours = daysUntilExam * request.availableHoursPerDay;
+    const studyHours = Math.floor(totalAvailableHours * 0.8); // 80% para estudos
+
+    // Validar estrutura básica
+    if (!aiPlan || !aiPlan.subjects || !Array.isArray(aiPlan.subjects)) {
+      return this.generateFallbackPlan(request);
+    }
+
+    // Filtrar apenas matérias solicitadas
+    const validSubjects = aiPlan.subjects.filter(subject => 
+      request.subjects.some(reqSubject => 
+        subject.name.toLowerCase().includes(reqSubject.toLowerCase()) ||
+        reqSubject.toLowerCase().includes(subject.name.toLowerCase())
+      )
+    );
+
+    if (validSubjects.length === 0) {
+      return this.generateFallbackPlan(request);
+    }
+
+    // Recalcular pesos para somar 100%
+    const totalWeight = validSubjects.reduce((sum, subject) => sum + (subject.weight || 0), 0);
+    if (totalWeight === 0) {
+      return this.generateFallbackPlan(request);
+    }
+
+    const correctedSubjects = validSubjects.map(subject => {
+      const normalizedWeight = Math.round((subject.weight / totalWeight) * 100);
+      const hours = Math.floor((studyHours * normalizedWeight) / 100);
+      
+      return {
+        name: subject.name,
+        weight: normalizedWeight,
+        hours: Math.max(hours, Math.floor(studyHours * 0.05)), // Mínimo 5% do tempo
+        difficulty: this.validateDifficulty(subject.difficulty),
+        priority: this.validatePriority(subject.priority, normalizedWeight)
+      };
+    });
+
+    // Ajustar para garantir que a soma seja exatamente 100%
+    const currentTotal = correctedSubjects.reduce((sum, s) => sum + s.weight, 0);
+    if (currentTotal !== 100) {
+      const diff = 100 - currentTotal;
+      correctedSubjects[0].weight += diff;
+      correctedSubjects[0].hours = Math.floor((studyHours * correctedSubjects[0].weight) / 100);
+    }
+
+    return {
+      title: aiPlan.title || `Plano de Estudos - ${request.examName}`,
+      description: aiPlan.description || `Plano personalizado para ${request.currentLevel} com ${studyHours}h de estudos distribuídas até ${request.examDate.toLocaleDateString('pt-BR')}`,
+      totalHours: studyHours,
+      subjects: correctedSubjects
+    };
+  }
+
+  private static validateDifficulty(difficulty: string): 'easy' | 'medium' | 'hard' {
+    const validDifficulties = ['easy', 'medium', 'hard'];
+    return validDifficulties.includes(difficulty) ? difficulty as any : 'medium';
+  }
+
+  private static validatePriority(priority: number, weight: number): number {
+    // Se a prioridade não for válida, calcular baseada no peso
+    if (!priority || priority < 1 || priority > 5) {
+      if (weight >= 20) return 5;
+      if (weight >= 15) return 4;
+      if (weight >= 10) return 3;
+      if (weight >= 5) return 2;
+      return 1;
+    }
+    return Math.max(1, Math.min(5, Math.round(priority)));
   }
 
   private static generateFallbackPlan(request: StudyPlanRequest) {
     const daysUntilExam = Math.ceil(
       (request.examDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
     );
-    const totalHours = daysUntilExam * request.availableHoursPerDay * 0.8; // 80% para estudos efetivos
+    const totalHours = Math.floor(daysUntilExam * request.availableHoursPerDay * 0.8);
 
+    // Pesos mais precisos baseados em análise de editais reais
     const subjectWeights = {
       'Direito Constitucional': 20,
-      'Direito Administrativo': 25,
+      'Direito Administrativo': 22,
       'Português': 15,
-      'Matemática': 10,
+      'Língua Portuguesa': 15,
+      'Matemática': 12,
       'Raciocínio Lógico': 10,
-      'Conhecimentos Gerais': 10,
-      'Informática': 10
+      'Conhecimentos Gerais': 8,
+      'Atualidades': 8,
+      'Informática': 8,
+      'Noções de Informática': 8,
+      'Direito Civil': 15,
+      'Direito Penal': 15,
+      'Direito Processual': 12,
+      'Direito Tributário': 12,
+      'Administração Pública': 10,
+      'Contabilidade': 12,
+      'Economia': 10,
+      'Estatística': 8
     };
 
-    const subjects = request.subjects.map(subject => {
-      const weight = subjectWeights[subject] || Math.floor(100 / request.subjects.length);
+    // Ajustar pesos baseado no nível do usuário
+    const levelMultipliers = {
+      beginner: { basic: 1.3, advanced: 0.7 },
+      intermediate: { basic: 1.0, advanced: 1.0 },
+      advanced: { basic: 0.8, advanced: 1.2 }
+    };
+
+    const basicSubjects = ['Português', 'Língua Portuguesa', 'Matemática', 'Conhecimentos Gerais'];
+    const multiplier = levelMultipliers[request.currentLevel];
+
+    let subjects = request.subjects.map(subject => {
+      let weight = subjectWeights[subject] || Math.floor(100 / request.subjects.length);
+      
+      // Ajustar peso baseado no nível
+      if (basicSubjects.includes(subject)) {
+        weight = Math.round(weight * multiplier.basic);
+      } else {
+        weight = Math.round(weight * multiplier.advanced);
+      }
+
+      // Aumentar peso para áreas de foco
+      if (request.focusAreas?.includes(subject)) {
+        weight = Math.round(weight * 1.2);
+      }
+
       return {
         name: subject,
         weight,
-        hours: Math.floor((totalHours * weight) / 100),
-        difficulty: 'medium' as const,
-        priority: weight > 15 ? 5 : weight > 10 ? 3 : 1
+        hours: 0, // Será calculado depois
+        difficulty: this.getSubjectDifficulty(subject, request.currentLevel),
+        priority: weight > 15 ? 5 : weight > 12 ? 4 : weight > 8 ? 3 : weight > 5 ? 2 : 1
       };
     });
 
+    // Normalizar pesos para somar 100%
+    const totalWeight = subjects.reduce((sum, s) => sum + s.weight, 0);
+    subjects = subjects.map(subject => ({
+      ...subject,
+      weight: Math.round((subject.weight / totalWeight) * 100)
+    }));
+
+    // Calcular horas baseado nos pesos normalizados
+    subjects = subjects.map(subject => ({
+      ...subject,
+      hours: Math.floor((totalHours * subject.weight) / 100)
+    }));
+
     return {
       title: `Plano de Estudos - ${request.examName}`,
-      description: `Plano personalizado com ${totalHours}h de estudos distribuídas até ${request.examDate.toLocaleDateString('pt-BR')}`,
+      description: `Plano personalizado para nível ${request.currentLevel} com ${totalHours}h de estudos distribuídas estrategicamente até ${request.examDate.toLocaleDateString('pt-BR')}`,
       totalHours,
       subjects
     };
+  }
+
+  private static getSubjectDifficulty(subject: string, level: string): 'easy' | 'medium' | 'hard' {
+    const difficultyMap = {
+      beginner: {
+        'Português': 'medium',
+        'Língua Portuguesa': 'medium',
+        'Matemática': 'hard',
+        'Raciocínio Lógico': 'hard',
+        'Conhecimentos Gerais': 'easy',
+        'Informática': 'medium',
+        'Direito Constitucional': 'medium',
+        'Direito Administrativo': 'hard'
+      },
+      intermediate: {
+        'Português': 'easy',
+        'Língua Portuguesa': 'easy',
+        'Matemática': 'medium',
+        'Raciocínio Lógico': 'medium',
+        'Conhecimentos Gerais': 'easy',
+        'Informática': 'easy',
+        'Direito Constitucional': 'medium',
+        'Direito Administrativo': 'medium'
+      },
+      advanced: {
+        'Português': 'easy',
+        'Língua Portuguesa': 'easy',
+        'Matemática': 'easy',
+        'Raciocínio Lógico': 'easy',
+        'Conhecimentos Gerais': 'easy',
+        'Informática': 'easy',
+        'Direito Constitucional': 'easy',
+        'Direito Administrativo': 'medium'
+      }
+    };
+
+    return difficultyMap[level]?.[subject] || 'medium';
   }
 
   private static async generateSchedule(planId: string, subjects: any[], request: StudyPlanRequest): Promise<ScheduleItem[]> {
@@ -212,45 +405,33 @@ Considere:
     const endDate = request.examDate;
     const daysUntilExam = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     
-    // Distribuir sessões de estudo ao longo dos dias
-    for (let day = 0; day < daysUntilExam; day++) {
+    // Calcular dias úteis (excluindo fins de semana)
+    const workDays = this.calculateWorkDays(startDate, endDate);
+    const dailyMinutes = request.availableHoursPerDay * 60;
+    
+    // Criar ciclos de estudo baseados na dificuldade e prioridade
+    const studyCycles = this.createStudyCycles(subjects, workDays, dailyMinutes);
+    
+    let currentDay = 0;
+    for (let day = 0; day < daysUntilExam && currentDay < workDays; day++) {
       const currentDate = new Date(startDate);
       currentDate.setDate(startDate.getDate() + day);
       
-      // Pular fins de semana se necessário
+      // Pular fins de semana
       if (currentDate.getDay() === 0 || currentDate.getDay() === 6) continue;
       
-      const dailyMinutes = request.availableHoursPerDay * 60;
-      let remainingMinutes = dailyMinutes;
+      const daySchedule = this.generateDaySchedule(
+        planId, 
+        subjects, 
+        currentDate, 
+        dailyMinutes, 
+        currentDay, 
+        workDays,
+        studyCycles
+      );
       
-      // Distribuir matérias no dia baseado na prioridade
-      const sortedSubjects = [...subjects].sort((a, b) => b.priority - a.priority);
-      
-      for (const subject of sortedSubjects) {
-        if (remainingMinutes <= 0) break;
-        
-        const sessionMinutes = Math.min(
-          Math.floor(remainingMinutes / sortedSubjects.length),
-          90 // Máximo 90 minutos por sessão
-        );
-        
-        if (sessionMinutes >= 30) { // Mínimo 30 minutos
-          const scheduleItem = {
-            plan_id: planId,
-            subject_id: subject.id,
-            scheduled_date: currentDate.toISOString().split('T')[0],
-            start_time: '09:00',
-            end_time: this.addMinutesToTime('09:00', sessionMinutes),
-            duration_minutes: sessionMinutes,
-            session_type: 'study' as const,
-            topic: `Estudo de ${subject.subject_name}`,
-            completed: false
-          };
-          
-          schedule.push(scheduleItem);
-          remainingMinutes -= sessionMinutes;
-        }
-      }
+      schedule.push(...daySchedule);
+      currentDay++;
     }
     
     // Salvar cronograma no banco
@@ -272,6 +453,177 @@ Considere:
       topic: item.topic,
       completed: item.completed
     }));
+  }
+
+  private static calculateWorkDays(startDate: Date, endDate: Date): number {
+    let workDays = 0;
+    const current = new Date(startDate);
+    
+    while (current <= endDate) {
+      if (current.getDay() !== 0 && current.getDay() !== 6) {
+        workDays++;
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return workDays;
+  }
+
+  private static createStudyCycles(subjects: any[], workDays: number, dailyMinutes: number) {
+    // Criar ciclos de estudo baseados na prioridade e dificuldade
+    const cycles = [];
+    const totalDays = workDays;
+    const reviewPeriod = Math.max(7, Math.floor(totalDays * 0.2)); // 20% para revisões
+    const studyPeriod = totalDays - reviewPeriod;
+    
+    // Fase 1: Estudo inicial (60% do tempo)
+    const initialStudyDays = Math.floor(studyPeriod * 0.6);
+    cycles.push({
+      name: 'initial_study',
+      startDay: 0,
+      endDay: initialStudyDays,
+      sessionType: 'study',
+      focus: 'learning'
+    });
+    
+    // Fase 2: Aprofundamento (30% do tempo)
+    const deepStudyDays = Math.floor(studyPeriod * 0.3);
+    cycles.push({
+      name: 'deep_study',
+      startDay: initialStudyDays,
+      endDay: initialStudyDays + deepStudyDays,
+      sessionType: 'practice',
+      focus: 'application'
+    });
+    
+    // Fase 3: Revisão intensiva (10% do tempo)
+    cycles.push({
+      name: 'intensive_review',
+      startDay: initialStudyDays + deepStudyDays,
+      endDay: studyPeriod,
+      sessionType: 'review',
+      focus: 'consolidation'
+    });
+    
+    // Fase 4: Revisão final
+    cycles.push({
+      name: 'final_review',
+      startDay: studyPeriod,
+      endDay: totalDays,
+      sessionType: 'review',
+      focus: 'final_preparation'
+    });
+    
+    return cycles;
+  }
+
+  private static generateDaySchedule(
+    planId: string, 
+    subjects: any[], 
+    currentDate: Date, 
+    dailyMinutes: number, 
+    currentDay: number, 
+    totalDays: number,
+    cycles: any[]
+  ) {
+    const schedule = [];
+    let remainingMinutes = dailyMinutes;
+    
+    // Determinar ciclo atual
+    const currentCycle = cycles.find(cycle => 
+      currentDay >= cycle.startDay && currentDay < cycle.endDay
+    ) || cycles[0];
+    
+    // Ordenar matérias baseado no ciclo atual e progresso
+    const sortedSubjects = this.sortSubjectsForDay(subjects, currentCycle, currentDay, totalDays);
+    
+    let currentTime = '09:00';
+    
+    for (const subject of sortedSubjects) {
+      if (remainingMinutes <= 0) break;
+      
+      // Calcular duração da sessão baseada no ciclo e prioridade
+      const sessionMinutes = this.calculateSessionDuration(
+        subject, 
+        currentCycle, 
+        remainingMinutes, 
+        sortedSubjects.length
+      );
+      
+      if (sessionMinutes >= 25) { // Mínimo 25 minutos (técnica Pomodoro)
+        const endTime = this.addMinutesToTime(currentTime, sessionMinutes);
+        
+        const scheduleItem = {
+          plan_id: planId,
+          subject_id: subject.id,
+          scheduled_date: currentDate.toISOString().split('T')[0],
+          start_time: currentTime,
+          end_time: endTime,
+          duration_minutes: sessionMinutes,
+          session_type: currentCycle.sessionType,
+          topic: this.generateSessionTopic(subject.subject_name, currentCycle),
+          completed: false
+        };
+        
+        schedule.push(scheduleItem);
+        remainingMinutes -= sessionMinutes;
+        
+        // Adicionar intervalo de 5-15 minutos entre sessões
+        const breakMinutes = sessionMinutes >= 60 ? 15 : 5;
+        currentTime = this.addMinutesToTime(endTime, breakMinutes);
+        remainingMinutes -= breakMinutes;
+      }
+    }
+    
+    return schedule;
+  }
+
+  private static sortSubjectsForDay(subjects: any[], cycle: any, currentDay: number, totalDays: number) {
+    return [...subjects].sort((a, b) => {
+      // Na fase inicial, priorizar matérias básicas
+      if (cycle.name === 'initial_study') {
+        return b.priority - a.priority;
+      }
+      
+      // Na fase de aprofundamento, alternar entre difíceis e fáceis
+      if (cycle.name === 'deep_study') {
+        const aDifficulty = a.difficulty === 'hard' ? 3 : a.difficulty === 'medium' ? 2 : 1;
+        const bDifficulty = b.difficulty === 'hard' ? 3 : b.difficulty === 'medium' ? 2 : 1;
+        return currentDay % 2 === 0 ? bDifficulty - aDifficulty : aDifficulty - bDifficulty;
+      }
+      
+      // Na revisão, priorizar por peso/importância
+      return b.weight_percentage - a.weight_percentage;
+    });
+  }
+
+  private static calculateSessionDuration(subject: any, cycle: any, remainingMinutes: number, totalSubjects: number): number {
+    const baseMinutes = Math.floor(remainingMinutes / totalSubjects);
+    
+    // Ajustar baseado na dificuldade
+    let multiplier = 1;
+    if (subject.difficulty === 'hard') multiplier = 1.3;
+    else if (subject.difficulty === 'easy') multiplier = 0.8;
+    
+    // Ajustar baseado no ciclo
+    if (cycle.name === 'initial_study') multiplier *= 1.2;
+    else if (cycle.name === 'final_review') multiplier *= 0.7;
+    
+    const sessionMinutes = Math.floor(baseMinutes * multiplier);
+    
+    // Limites mínimos e máximos
+    return Math.max(25, Math.min(90, sessionMinutes));
+  }
+
+  private static generateSessionTopic(subjectName: string, cycle: any): string {
+    const topicTemplates = {
+      initial_study: `Fundamentos de ${subjectName}`,
+      deep_study: `Prática e exercícios de ${subjectName}`,
+      intensive_review: `Revisão intensiva de ${subjectName}`,
+      final_review: `Revisão final de ${subjectName}`
+    };
+    
+    return topicTemplates[cycle.name] || `Estudo de ${subjectName}`;
   }
 
   private static addMinutesToTime(time: string, minutes: number): string {
@@ -584,6 +936,46 @@ Considere:
     } catch (error) {
       console.error('Error saving edital reference:', error);
       // Não falha o processo principal se não conseguir salvar a referência
+    }
+  }
+
+  // Método para excluir plano de estudos
+  static async deleteStudyPlan(planId: string): Promise<void> {
+    try {
+      // Verificar se o usuário está autenticado
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Usuário não autenticado');
+      }
+
+      // Verificar se o plano pertence ao usuário
+      const { data: plan, error: planError } = await supabase
+        .from('study_plans')
+        .select('id, user_id')
+        .eq('id', planId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (planError || !plan) {
+        throw new Error('Plano de estudos não encontrado ou você não tem permissão para excluí-lo');
+      }
+
+      // Excluir o plano (as tabelas relacionadas serão excluídas automaticamente devido ao CASCADE)
+      const { error: deleteError } = await supabase
+        .from('study_plans')
+        .delete()
+        .eq('id', planId)
+        .eq('user_id', user.id);
+
+      if (deleteError) {
+        console.error('Erro ao excluir plano de estudos:', deleteError);
+        throw new Error('Erro ao excluir plano de estudos');
+      }
+
+      console.log('Plano de estudos excluído com sucesso:', planId);
+    } catch (error) {
+      console.error('Erro em deleteStudyPlan:', error);
+      throw error;
     }
   }
 }
