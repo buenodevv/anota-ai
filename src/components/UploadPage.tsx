@@ -1,4 +1,4 @@
-import { Upload, FileText, Loader2, CheckCircle, AlertCircle, Clock, X, Settings, Brain, Zap, Link, Globe, Check } from 'lucide-react';
+import { Upload, FileText, Loader2, AlertCircle, X, Settings, Brain, Zap, Link, Globe, Check } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { DocumentService } from '../services/documentService';
